@@ -26,12 +26,18 @@ type FulfillmentService struct {
 	settingService        *SettingService
 	defaultEmailConfig    config.EmailConfig
 	downstreamCallbackSvc *DownstreamCallbackService
+	teamGenieSyncSvc      *TeamGenieSyncService
 	userOAuthIdentityRepo repository.UserOAuthIdentityRepository
 }
 
 // SetDownstreamCallbackService 设置下游回调服务（解决循环依赖）
 func (s *FulfillmentService) SetDownstreamCallbackService(svc *DownstreamCallbackService) {
 	s.downstreamCallbackSvc = svc
+}
+
+// SetTeamGenieSyncService 设置 TeamGenie 同步服务
+func (s *FulfillmentService) SetTeamGenieSyncService(svc *TeamGenieSyncService) {
+	s.teamGenieSyncSvc = svc
 }
 
 // NewFulfillmentService 创建交付服务
@@ -368,6 +374,20 @@ func (s *FulfillmentService) CreateAuto(orderID uint) (*models.Fulfillment, erro
 	// B 侧：自动交付完成后触发下游回调
 	if s.downstreamCallbackSvc != nil {
 		s.downstreamCallbackSvc.EnqueueCallback(orderID)
+	}
+	if s.teamGenieSyncSvc != nil {
+		if s.queueClient != nil && s.queueClient.Enabled() {
+			if err := s.queueClient.EnqueueTeamGenieSyncFulfilled(queue.TeamGenieSyncFulfilledPayload{OrderID: orderID}); err != nil {
+				logger.Warnw("fulfillment_enqueue_teamgenie_sync_failed",
+					"order_id", order.ID,
+					"order_no", order.OrderNo,
+					"error", err,
+				)
+				s.teamGenieSyncSvc.NotifyFulfilled(order, fulfillment)
+			}
+		} else {
+			s.teamGenieSyncSvc.NotifyFulfilled(order, fulfillment)
+		}
 	}
 	return fulfillment, nil
 }
