@@ -90,6 +90,7 @@ type Container struct {
 	ProductMappingService     *service.ProductMappingService
 	ProcurementOrderService   *service.ProcurementOrderService
 	DownstreamCallbackService *service.DownstreamCallbackService
+	TeamGenieSyncService      *service.TeamGenieSyncService
 	ReconciliationService     *service.ReconciliationService
 	ChannelClientService      *service.ChannelClientService
 	TelegramBroadcastService  *service.TelegramBroadcastService
@@ -255,6 +256,7 @@ func (c *Container) initServices() {
 	c.SiteConnectionService = service.NewSiteConnectionService(c.SiteConnectionRepo, c.Config.App.SecretKey, "uploads")
 	c.ProductMappingService = service.NewProductMappingService(c.ProductMappingRepo, c.SKUMappingRepo, c.ProductRepo, c.ProductSKURepo, c.CategoryRepo, c.SiteConnectionService)
 	c.DownstreamCallbackService = service.NewDownstreamCallbackService(c.DownstreamOrderRefRepo, c.OrderRepo, c.ApiCredentialRepo, c.QueueClient)
+	c.TeamGenieSyncService = service.NewTeamGenieSyncService(c.Config.TeamGenieSync)
 	c.PaymentService = service.NewPaymentService(service.PaymentServiceOptions{
 		OrderRepo:             c.OrderRepo,
 		ProductRepo:           c.ProductRepo,
@@ -294,6 +296,7 @@ func (c *Container) initServices() {
 	c.PaymentService.SetProcurementService(c.ProcurementOrderService)
 	c.PaymentService.SetDownstreamCallbackService(c.DownstreamCallbackService)
 	c.FulfillmentService.SetDownstreamCallbackService(c.DownstreamCallbackService)
+	c.FulfillmentService.SetTeamGenieSyncService(c.TeamGenieSyncService)
 	c.ProcurementOrderService.SetDownstreamCallbackService(c.DownstreamCallbackService)
 	c.AdProxyService = service.NewAdProxyService()
 }
