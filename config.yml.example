@@ -43,6 +43,15 @@ telegram_auth:
   login_expire_seconds: 300
   replay_ttl_seconds: 300
 
+teamgenie_sync:
+  enabled: false
+  webhook_url: ""      # 例如 http://127.0.0.1:8788/webhooks/dujiao/fulfilled
+  shared_secret: ""    # teamgenie-sync-service 的 DUJIAO_SYNC_SECRET
+  channel: ""          # 可留空，交由 sync-service 使用默认值
+  source_platform: ""  # 可留空，交由 sync-service 使用默认值
+  source_site: ""      # 可留空，交由 sync-service 使用默认值
+  timeout_ms: 3000
+
 redis:
   enabled: true
   host: 127.0.0.1
