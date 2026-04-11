@@ -994,6 +994,7 @@ func (h *Handler) GetGuestOrderByOrderNo(c *gin.Context) {
 		return
 	}
 	orderDetail := dto.NewOrderDetailTruncated(order)
+	redactOrderDetailFulfillmentForPublic(&orderDetail)
 	h.enrichOrderWithAllowedChannels(order, &orderDetail)
 	response.Success(c, orderDetail)
 }

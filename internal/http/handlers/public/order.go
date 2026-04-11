@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dujiao-next/internal/constants"
 	"github.com/dujiao-next/internal/dto"
 	"github.com/dujiao-next/internal/http/handlers/shared"
 	"github.com/dujiao-next/internal/http/response"
@@ -279,6 +280,7 @@ func (h *Handler) GetOrderByOrderNo(c *gin.Context) {
 	}
 
 	orderDetail := dto.NewOrderDetailTruncated(order)
+	redactOrderDetailFulfillmentForPublic(&orderDetail)
 	h.enrichOrderWithAllowedChannels(order, &orderDetail)
 	response.Success(c, orderDetail)
 }
@@ -358,13 +360,34 @@ func respondFulfillmentDownload(c *gin.Context, order *models.Order) {
 	c.Data(200, "text/plain; charset=utf-8", []byte(payload))
 }
 
+func canExposeFulfillmentByStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case constants.OrderStatusPartiallyDelivered, constants.OrderStatusDelivered, constants.OrderStatusCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+func redactOrderDetailFulfillmentForPublic(d *dto.OrderDetail) {
+	if d == nil {
+		return
+	}
+	if !canExposeFulfillmentByStatus(d.Status) {
+		d.Fulfillment = nil
+	}
+	for i := range d.Children {
+		redactOrderDetailFulfillmentForPublic(&d.Children[i])
+	}
+}
+
 func collectFulfillmentPayload(order *models.Order) string {
-	if order.Fulfillment != nil && order.Fulfillment.Payload != "" {
+	if canExposeFulfillmentByStatus(order.Status) && order.Fulfillment != nil && order.Fulfillment.Payload != "" {
 		return order.Fulfillment.Payload
 	}
 	var parts []string
 	for _, child := range order.Children {
-		if child.Fulfillment != nil && child.Fulfillment.Payload != "" {
+		if canExposeFulfillmentByStatus(child.Status) && child.Fulfillment != nil && child.Fulfillment.Payload != "" {
 			parts = append(parts, child.Fulfillment.Payload)
 		}
 	}
