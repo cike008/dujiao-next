@@ -13,23 +13,24 @@ import (
 
 // Config 应用配置结构
 type Config struct {
-	App          AppConfig          `mapstructure:"app"`
-	Server       ServerConfig       `mapstructure:"server"`
-	Log          LogConfig          `mapstructure:"log"`
-	Database     DatabaseConfig     `mapstructure:"database"`
-	JWT          JWTConfig          `mapstructure:"jwt"`
-	UserJWT      JWTConfig          `mapstructure:"user_jwt"`
-	Bootstrap    BootstrapConfig    `mapstructure:"bootstrap"`
-	TelegramAuth TelegramAuthConfig `mapstructure:"telegram_auth"`
-	Redis        RedisConfig        `mapstructure:"redis"`
-	Queue        QueueConfig        `mapstructure:"queue"`
-	Upload       UploadConfig       `mapstructure:"upload"`
-	CORS         CORSConfig         `mapstructure:"cors"`
-	Security     SecurityConfig     `mapstructure:"security"`
-	Email        EmailConfig        `mapstructure:"email"`
-	Order        OrderConfig        `mapstructure:"order"`
-	Captcha      CaptchaConfig      `mapstructure:"captcha"`
-	Web          WebConfig          `mapstructure:"web"`
+	App           AppConfig           `mapstructure:"app"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Log           LogConfig           `mapstructure:"log"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	JWT           JWTConfig           `mapstructure:"jwt"`
+	UserJWT       JWTConfig           `mapstructure:"user_jwt"`
+	Bootstrap     BootstrapConfig     `mapstructure:"bootstrap"`
+	TelegramAuth  TelegramAuthConfig  `mapstructure:"telegram_auth"`
+	TeamGenieSync TeamGenieSyncConfig `mapstructure:"teamgenie_sync"`
+	Redis         RedisConfig         `mapstructure:"redis"`
+	Queue         QueueConfig         `mapstructure:"queue"`
+	Upload        UploadConfig        `mapstructure:"upload"`
+	CORS          CORSConfig          `mapstructure:"cors"`
+	Security      SecurityConfig      `mapstructure:"security"`
+	Email         EmailConfig         `mapstructure:"email"`
+	Order         OrderConfig         `mapstructure:"order"`
+	Captcha       CaptchaConfig       `mapstructure:"captcha"`
+	Web           WebConfig           `mapstructure:"web"`
 }
 
 // AppConfig 应用级配置
@@ -103,6 +104,17 @@ type TelegramAuthConfig struct {
 	MiniAppURL         string `mapstructure:"mini_app_url"`
 	LoginExpireSeconds int    `mapstructure:"login_expire_seconds"`
 	ReplayTTLSeconds   int    `mapstructure:"replay_ttl_seconds"`
+}
+
+// TeamGenieSyncConfig TeamGenie 同步服务配置
+type TeamGenieSyncConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	WebhookURL     string `mapstructure:"webhook_url"`
+	SharedSecret   string `mapstructure:"shared_secret"`
+	Channel        string `mapstructure:"channel"`
+	SourcePlatform string `mapstructure:"source_platform"`
+	SourceSite     string `mapstructure:"source_site"`
+	TimeoutMS      int    `mapstructure:"timeout_ms"`
 }
 
 // RedisConfig Redis 配置
@@ -307,6 +319,13 @@ func Load() *Config {
 	viper.SetDefault("telegram_auth.bot_token", "")
 	viper.SetDefault("telegram_auth.login_expire_seconds", 300)
 	viper.SetDefault("telegram_auth.replay_ttl_seconds", 300)
+	viper.SetDefault("teamgenie_sync.enabled", false)
+	viper.SetDefault("teamgenie_sync.webhook_url", "")
+	viper.SetDefault("teamgenie_sync.shared_secret", "")
+	viper.SetDefault("teamgenie_sync.channel", "")
+	viper.SetDefault("teamgenie_sync.source_platform", "")
+	viper.SetDefault("teamgenie_sync.source_site", "")
+	viper.SetDefault("teamgenie_sync.timeout_ms", 3000)
 	viper.SetDefault("redis.enabled", true)
 	viper.SetDefault("redis.host", "127.0.0.1")
 	viper.SetDefault("redis.port", 6379)

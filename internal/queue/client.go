@@ -172,6 +172,25 @@ func (c *Client) EnqueueDownstreamCallback(payload DownstreamCallbackPayload, op
 	return err
 }
 
+// EnqueueTeamGenieSyncFulfilled 推送 TeamGenie 售出同步任务
+func (c *Client) EnqueueTeamGenieSyncFulfilled(payload TeamGenieSyncFulfilledPayload, opts ...asynq.Option) error {
+	if !c.Enabled() {
+		return nil
+	}
+	task, err := NewTeamGenieSyncFulfilledTask(payload)
+	if err != nil {
+		return err
+	}
+	options := append([]asynq.Option{
+		asynq.Queue(c.defaultQueue),
+		asynq.MaxRetry(5),
+		// Avoid duplicate sync tasks for the same order during callback retries.
+		asynq.Unique(30 * time.Minute),
+	}, opts...)
+	_, err = c.client.Enqueue(task, options...)
+	return err
+}
+
 // EnqueueReconciliationRun 入队对账执行任务
 func (c *Client) EnqueueReconciliationRun(payload ReconciliationRunPayload, opts ...asynq.Option) error {
 	if !c.Enabled() {

@@ -31,6 +31,8 @@ const (
 	TaskProcurementSyncAccepted = constants.TaskProcurementSyncAccepted
 	// TaskDownstreamCallback 下游回调通知任务
 	TaskDownstreamCallback = constants.TaskDownstreamCallback
+	// TaskTeamGenieSyncFulfilled TeamGenie 售出同步任务
+	TaskTeamGenieSyncFulfilled = constants.TaskTeamGenieSyncFulfilled
 	// TaskReconciliationRun 对账执行任务
 	TaskReconciliationRun = constants.TaskReconciliationRun
 	// TaskBotNotify Bot 交付通知任务
@@ -197,6 +199,20 @@ func NewDownstreamCallbackTask(payload DownstreamCallbackPayload) (*asynq.Task, 
 		return nil, err
 	}
 	return asynq.NewTask(TaskDownstreamCallback, body), nil
+}
+
+// TeamGenieSyncFulfilledPayload TeamGenie 售出同步任务载荷
+type TeamGenieSyncFulfilledPayload struct {
+	OrderID uint `json:"order_id"`
+}
+
+// NewTeamGenieSyncFulfilledTask 创建 TeamGenie 售出同步任务
+func NewTeamGenieSyncFulfilledTask(payload TeamGenieSyncFulfilledPayload) (*asynq.Task, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TaskTeamGenieSyncFulfilled, body), nil
 }
 
 // BotNotifyPayload Bot 交付通知任务载荷
