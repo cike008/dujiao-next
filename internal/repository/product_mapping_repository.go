@@ -83,7 +83,8 @@ func (r *GormProductMappingRepository) Create(mapping *models.ProductMapping) er
 }
 
 func (r *GormProductMappingRepository) Update(mapping *models.ProductMapping) error {
-	return r.db.Save(mapping).Error
+	// Avoid cascading saves for preloaded associations during sync updates.
+	return r.db.Omit("Connection", "Product").Save(mapping).Error
 }
 
 func (r *GormProductMappingRepository) Delete(id uint) error {
@@ -136,7 +137,7 @@ func (r *GormProductMappingRepository) ListActiveByConnection(connectionID uint)
 
 func (r *GormProductMappingRepository) ListAllActive() ([]models.ProductMapping, error) {
 	var mappings []models.ProductMapping
-	if err := r.db.Where("is_active = ?", true).Preload("Connection").Find(&mappings).Error; err != nil {
+	if err := r.db.Where("is_active = ?", true).Find(&mappings).Error; err != nil {
 		return nil, err
 	}
 	return mappings, nil

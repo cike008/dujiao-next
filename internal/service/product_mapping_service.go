@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -457,10 +458,15 @@ func (s *ProductMappingService) SyncProduct(mappingID uint) error {
 		return fmt.Errorf("get local product: %w", err)
 	}
 	if localProduct != nil {
-		// 同步人工交付表单配置
-		if upProduct.ManualFormSchema != nil {
-			localProduct.ManualFormSchemaJSON = upProduct.ManualFormSchema
-			_ = s.productRepo.Update(localProduct)
+		fields := make(map[string]interface{})
+		if upProduct.ManualFormSchema != nil &&
+			!reflect.DeepEqual(map[string]interface{}(localProduct.ManualFormSchemaJSON), map[string]interface{}(upProduct.ManualFormSchema)) {
+			fields["manual_form_schema_json"] = upProduct.ManualFormSchema
+		}
+		if len(fields) > 0 {
+			if err := s.productRepo.QuickUpdate(strconv.FormatUint(uint64(localProduct.ID), 10), fields); err != nil {
+				return fmt.Errorf("update local product mapping fields: %w", err)
+			}
 		}
 	}
 
@@ -837,9 +843,19 @@ func (s *ProductMappingService) syncProductFromData(mapping *models.ProductMappi
 		return
 	}
 
-	if upProduct.ManualFormSchema != nil {
-		localProduct.ManualFormSchemaJSON = upProduct.ManualFormSchema
-		_ = s.productRepo.Update(localProduct)
+	fields := make(map[string]interface{})
+	if upProduct.ManualFormSchema != nil &&
+		!reflect.DeepEqual(map[string]interface{}(localProduct.ManualFormSchemaJSON), map[string]interface{}(upProduct.ManualFormSchema)) {
+		fields["manual_form_schema_json"] = upProduct.ManualFormSchema
+	}
+	if len(fields) > 0 {
+		if err := s.productRepo.QuickUpdate(strconv.FormatUint(uint64(localProduct.ID), 10), fields); err != nil {
+			logger.Warnw("sync_product_update_local_fields_failed",
+				"mapping_id", mapping.ID,
+				"local_product_id", localProduct.ID,
+				"error", err,
+			)
+		}
 	}
 
 	// ── 2. 同步 SKU ──
