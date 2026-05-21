@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/dujiao-next/internal/config"
 	"github.com/dujiao-next/internal/logger"
 	"github.com/dujiao-next/internal/models"
+	"github.com/dujiao-next/internal/repository"
 )
 
 type TeamGenieSyncService struct {
 	cfg        config.TeamGenieSyncConfig
 	httpClient *http.Client
+	userRepo   repository.UserRepository
 }
 
 type teamGenieSyncPayload struct {
@@ -37,13 +40,14 @@ type teamGenieFulfillment struct {
 	Cards  []string `json:"cards"`
 }
 
-func NewTeamGenieSyncService(cfg config.TeamGenieSyncConfig) *TeamGenieSyncService {
+func NewTeamGenieSyncService(cfg config.TeamGenieSyncConfig, userRepo repository.UserRepository) *TeamGenieSyncService {
 	timeout := cfg.TimeoutMS
 	if timeout <= 0 {
 		timeout = 3000
 	}
 	return &TeamGenieSyncService{
-		cfg: cfg,
+		cfg:      cfg,
+		userRepo: userRepo,
 		httpClient: &http.Client{
 			Timeout: time.Duration(timeout) * time.Millisecond,
 		},
@@ -66,7 +70,7 @@ func (s *TeamGenieSyncService) NotifyFulfilled(order *models.Order, fulfillment 
 			logger.Warnw("teamgenie_sync_notify_failed",
 				"order_id", order.ID,
 				"order_no", order.OrderNo,
-				"webhook_url", s.cfg.WebhookURL,
+				"webhook_url", sanitizeWebhookURLForLog(s.cfg.WebhookURL),
 				"error", err,
 			)
 			return
@@ -99,7 +103,7 @@ func (s *TeamGenieSyncService) buildPayload(order *models.Order, fulfillment *mo
 
 	payload := &teamGenieSyncPayload{
 		OrderNo:        order.OrderNo,
-		BuyerEmail:     strings.TrimSpace(order.GuestEmail),
+		BuyerEmail:     s.resolveBuyerEmail(order),
 		Price:          order.TotalAmount.String(),
 		Currency:       strings.TrimSpace(order.Currency),
 		Channel:        strings.TrimSpace(s.cfg.Channel),
@@ -115,6 +119,32 @@ func (s *TeamGenieSyncService) buildPayload(order *models.Order, fulfillment *mo
 		},
 	}
 	return payload, true
+}
+
+func (s *TeamGenieSyncService) resolveBuyerEmail(order *models.Order) string {
+	if order == nil {
+		return ""
+	}
+	if email := strings.TrimSpace(order.GuestEmail); email != "" {
+		return email
+	}
+	if order.UserID == 0 || s.userRepo == nil {
+		return ""
+	}
+	user, err := s.userRepo.GetByID(order.UserID)
+	if err != nil {
+		logger.Warnw("teamgenie_sync_resolve_buyer_email_failed",
+			"order_id", order.ID,
+			"order_no", order.OrderNo,
+			"user_id", order.UserID,
+			"error", err,
+		)
+		return ""
+	}
+	if user == nil {
+		return ""
+	}
+	return strings.TrimSpace(user.Email)
 }
 
 func (s *TeamGenieSyncService) post(payload *teamGenieSyncPayload) error {
@@ -141,6 +171,23 @@ func (s *TeamGenieSyncService) post(payload *teamGenieSyncPayload) error {
 		return fmt.Errorf("sync webhook returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	return nil
+}
+
+func sanitizeWebhookURLForLog(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return "<invalid>"
+	}
+	if u.User != nil {
+		u.User = url.User("***")
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 func splitPayloadCards(raw string) []string {

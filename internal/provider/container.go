@@ -276,7 +276,7 @@ func (c *Container) initServices() {
 	c.ProductMappingService = service.NewProductMappingService(c.ProductMappingRepo, c.SKUMappingRepo, c.ProductRepo, c.ProductSKURepo, c.CategoryRepo, c.SiteConnectionService)
 	c.ProductMappingService.SetCategoryService(c.CategoryService)
 	c.DownstreamCallbackService = service.NewDownstreamCallbackService(c.DownstreamOrderRefRepo, c.OrderRepo, c.ApiCredentialRepo, c.QueueClient)
-	c.TeamGenieSyncService = service.NewTeamGenieSyncService(c.Config.TeamGenieSync)
+	c.TeamGenieSyncService = service.NewTeamGenieSyncService(c.Config.TeamGenieSync, c.UserRepo)
 	c.PaymentService = service.NewPaymentService(service.PaymentServiceOptions{
 		OrderRepo:             c.OrderRepo,
 		ProductRepo:           c.ProductRepo,
