@@ -17,6 +17,7 @@ type ProductResp struct {
 	Images               models.StringArray `json:"images"`
 	Tags                 models.StringArray `json:"tags"`
 	PurchaseType         string             `json:"purchase_type"`
+	SortOrder            int                `json:"sort_order"`
 	MinPurchaseQuantity  int                `json:"min_purchase_quantity"`
 	MaxPurchaseQuantity  int                `json:"max_purchase_quantity"`
 	FulfillmentType      string             `json:"fulfillment_type"`
@@ -56,6 +57,7 @@ type SKUResp struct {
 	AutoStockAvailable int64        `json:"auto_stock_available"`
 	UpstreamStock      int          `json:"upstream_stock"`
 	IsActive           bool         `json:"is_active"`
+	SortOrder          int          `json:"sort_order"`
 
 	// 促销/会员价附加
 	PromotionPriceAmount *models.Money `json:"promotion_price_amount,omitempty"`

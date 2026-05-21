@@ -62,6 +62,7 @@ func (v *publicProductView) toProductResp() dto.ProductResp {
 			AutoStockAvailable:   sv.AutoStockAvailable,
 			UpstreamStock:        sv.UpstreamStock,
 			IsActive:             sv.IsActive,
+			SortOrder:            sv.SortOrder,
 			PromotionPriceAmount: sv.PromotionPriceAmount,
 			MemberPriceAmount:    sv.MemberPriceAmount,
 		})
@@ -79,6 +80,7 @@ func (v *publicProductView) toProductResp() dto.ProductResp {
 		Images:               v.Product.Images,
 		Tags:                 v.Product.Tags,
 		PurchaseType:         v.Product.PurchaseType,
+		SortOrder:            v.Product.SortOrder,
 		MinPurchaseQuantity:  v.Product.MinPurchaseQuantity,
 		MaxPurchaseQuantity:  v.Product.MaxPurchaseQuantity,
 		FulfillmentType:      v.Product.FulfillmentType,

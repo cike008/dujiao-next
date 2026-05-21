@@ -8,6 +8,29 @@ import (
 	"github.com/dujiao-next/internal/models"
 )
 
+func TestProductRespIncludesSortOrder(t *testing.T) {
+	resp := ProductResp{
+		ID:        1,
+		Slug:      "netflix",
+		SortOrder: 99,
+		SKUs: []SKUResp{
+			{ID: 10, SKUCode: "default", SortOrder: 20},
+		},
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal product resp: %v", err)
+	}
+	jsonStr := string(data)
+	if !strings.Contains(jsonStr, `"sort_order":99`) {
+		t.Fatalf("product sort_order should appear, got %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"sort_order":20`) {
+		t.Fatalf("sku sort_order should appear, got %s", jsonStr)
+	}
+}
+
 func TestCategoryRespOmitsSensitiveFields(t *testing.T) {
 	cat := &models.Category{
 		ID:        1,
