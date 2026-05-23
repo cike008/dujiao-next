@@ -173,6 +173,7 @@ func BuiltinRoleSeeds() []RoleSeed {
 			Policies: []Policy{
 				// 系统设置
 				{Object: "/admin/settings", Action: "*"},
+				{Object: "/admin/settings/contact-items", Action: "*"},
 				{Object: "/admin/settings/smtp", Action: "*"},
 				{Object: "/admin/settings/smtp/test", Action: "POST"},
 				{Object: "/admin/settings/captcha", Action: "*"},

@@ -142,6 +142,51 @@ func (s *SettingService) preserveSiteContactItems(value map[string]interface{}) 
 	return nil
 }
 
+// GetSiteContactItems 获取站点扩展联系方式。
+func (s *SettingService) GetSiteContactItems() ([]interface{}, error) {
+	setting, err := s.repo.GetByKey(constants.SettingKeySiteConfig)
+	if err != nil {
+		return nil, err
+	}
+	if setting == nil {
+		return make([]interface{}, 0), nil
+	}
+
+	contactMap, ok := setting.ValueJSON["contact"].(map[string]interface{})
+	if !ok {
+		return make([]interface{}, 0), nil
+	}
+	return normalizeSiteContactItems(contactMap["items"]), nil
+}
+
+// UpdateSiteContactItems 更新站点扩展联系方式，仅触碰 site_config.contact.items。
+func (s *SettingService) UpdateSiteContactItems(items []interface{}) ([]interface{}, error) {
+	value := map[string]interface{}{}
+	setting, err := s.repo.GetByKey(constants.SettingKeySiteConfig)
+	if err != nil {
+		return nil, err
+	}
+	if setting != nil {
+		for key, raw := range setting.ValueJSON {
+			value[key] = raw
+		}
+	}
+
+	contactMap, _ := value["contact"].(map[string]interface{})
+	if contactMap == nil {
+		contactMap = map[string]interface{}{}
+		value["contact"] = contactMap
+	}
+	contactMap["items"] = items
+
+	updated, err := s.Update(constants.SettingKeySiteConfig, value)
+	if err != nil {
+		return nil, err
+	}
+	updatedContact, _ := updated["contact"].(map[string]interface{})
+	return normalizeSiteContactItems(updatedContact["items"]), nil
+}
+
 // DefaultOrderConfig 默认订单配置。
 func DefaultOrderConfig() OrderConfig {
 	return OrderConfig{

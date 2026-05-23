@@ -294,6 +294,8 @@ func SetupRouter(cfg *config.Config, c *provider.Container) *gin.Engine {
 				// 设置管理
 				authorized.GET("/settings", adminHandler.GetSettings)
 				authorized.PUT("/settings", adminHandler.UpdateSettings)
+				authorized.GET("/settings/contact-items", adminHandler.GetContactItems)
+				authorized.PUT("/settings/contact-items", adminHandler.UpdateContactItems)
 				authorized.GET("/settings/smtp", adminHandler.GetSMTPSettings)
 				authorized.PUT("/settings/smtp", adminHandler.UpdateSMTPSettings)
 				authorized.POST("/settings/smtp/test", adminHandler.TestSMTPSettings)

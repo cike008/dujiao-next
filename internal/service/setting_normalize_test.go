@@ -394,6 +394,54 @@ func TestUpdateSiteSettingPreservesContactItemsWhenMissing(t *testing.T) {
 	}
 }
 
+func TestUpdateSiteContactItemsOnlyTouchesContactItems(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := NewSettingService(repo)
+
+	_, err := svc.Update(constants.SettingKeySiteConfig, map[string]interface{}{
+		"brand": map[string]interface{}{
+			"site_name": "Mosh",
+			"site_url":  "https://share.aimosh.com",
+		},
+		"contact": map[string]interface{}{
+			"telegram": "https://t.me/old",
+			"whatsapp": "https://wa.me/1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed site config failed: %v", err)
+	}
+
+	items, err := svc.UpdateSiteContactItems([]interface{}{
+		map[string]interface{}{
+			"type":       "email",
+			"label":      map[string]interface{}{"zh-CN": "邮箱", "en-US": "Email"},
+			"value":      "support@example.com",
+			"enabled":    true,
+			"sort_order": 2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("update contact items failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("unexpected contact items: %#v", items)
+	}
+
+	site, err := svc.GetByKey(constants.SettingKeySiteConfig)
+	if err != nil {
+		t.Fatalf("get site config failed: %v", err)
+	}
+	brand, _ := site["brand"].(map[string]interface{})
+	if brand["site_name"] != "Mosh" || brand["site_url"] != "https://share.aimosh.com" {
+		t.Fatalf("unexpected brand after contact item update: %#v", brand)
+	}
+	contact, _ := site["contact"].(map[string]interface{})
+	if contact["telegram"] != "https://t.me/old" || contact["whatsapp"] != "https://wa.me/1" {
+		t.Fatalf("unexpected contact channels after contact item update: %#v", contact)
+	}
+}
+
 func TestUpdateSiteSettingNormalizedDefaultAbout(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := NewSettingService(repo)
