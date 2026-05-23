@@ -118,6 +118,7 @@ func (h *Handler) GetConfig(c *gin.Context) {
 
 	var cached map[string]interface{}
 	if hit, err := cache.GetJSON(c.Request.Context(), publicConfigCacheKey, &cached); err == nil && hit {
+		ensurePublicConfigContact(cached)
 		cached["server_time"] = time.Now().UnixMilli()
 		cached["app_version"] = version.Version
 		response.Success(c, cached)
@@ -129,6 +130,7 @@ func (h *Handler) GetConfig(c *gin.Context) {
 		shared.RespondError(c, response.CodeInternal, "error.config_fetch_failed", err)
 		return
 	}
+	ensurePublicConfigContact(data)
 
 	publicChannels, err := h.PaymentService.GetAvailableChannels(service.AvailablePaymentChannelFilter{
 		PaymentType: constants.PaymentTypeOrder,
@@ -202,6 +204,21 @@ func (h *Handler) GetConfig(c *gin.Context) {
 	data["server_time"] = time.Now().UnixMilli()
 	data["app_version"] = version.Version
 	response.Success(c, data)
+}
+
+func ensurePublicConfigContact(data map[string]interface{}) {
+	contact, ok := data["contact"].(map[string]interface{})
+	if !ok {
+		data["contact"] = map[string]interface{}{
+			"telegram": "",
+			"whatsapp": "",
+			"items":    make([]interface{}, 0),
+		}
+		return
+	}
+	if _, ok := contact["items"]; !ok {
+		contact["items"] = make([]interface{}, 0)
+	}
 }
 
 // GetPublicMemberLevels 获取公共会员等级列表
