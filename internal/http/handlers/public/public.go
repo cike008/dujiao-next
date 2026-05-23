@@ -111,6 +111,7 @@ func (h *Handler) GetConfig(c *gin.Context) {
 		"contact": map[string]interface{}{
 			"telegram": "https://t.me/dujiaoka",
 			"whatsapp": "https://wa.me/1234567890",
+			"items":    make([]interface{}, 0),
 		},
 		"scripts": make([]interface{}, 0),
 	}

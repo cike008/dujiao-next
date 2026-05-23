@@ -94,6 +94,12 @@ func (s *SettingService) GetByKey(key string) (models.JSON, error) {
 
 // Update 设置值
 func (s *SettingService) Update(key string, value map[string]interface{}) (models.JSON, error) {
+	if key == constants.SettingKeySiteConfig {
+		if err := s.preserveSiteContactItems(value); err != nil {
+			return nil, err
+		}
+	}
+
 	normalized := normalizeSettingValueByKey(key, value)
 
 	setting, err := s.repo.Upsert(key, normalized)
@@ -101,6 +107,39 @@ func (s *SettingService) Update(key string, value map[string]interface{}) (model
 		return nil, err
 	}
 	return setting.ValueJSON, nil
+}
+
+func (s *SettingService) preserveSiteContactItems(value map[string]interface{}) error {
+	contactMap, _ := value["contact"].(map[string]interface{})
+	if contactMap != nil {
+		if _, ok := contactMap["items"]; ok {
+			return nil
+		}
+	}
+
+	setting, err := s.repo.GetByKey(constants.SettingKeySiteConfig)
+	if err != nil {
+		return err
+	}
+	if setting == nil {
+		return nil
+	}
+
+	existingContact, ok := setting.ValueJSON["contact"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	items, ok := existingContact["items"]
+	if !ok {
+		return nil
+	}
+
+	if contactMap == nil {
+		contactMap = map[string]interface{}{}
+		value["contact"] = contactMap
+	}
+	contactMap["items"] = items
+	return nil
 }
 
 // DefaultOrderConfig 默认订单配置。

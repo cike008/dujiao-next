@@ -77,6 +77,23 @@ func TestUpdateSiteSettingNormalized(t *testing.T) {
 		"contact": map[string]interface{}{
 			"telegram": "  https://t.me/demo  ",
 			"whatsapp": 123,
+			"items": []interface{}{
+				map[string]interface{}{
+					"id":         "work-wechat",
+					"type":       " WECHAT_WORK ",
+					"label":      map[string]interface{}{"zh-CN": " 企业微信 ", "en-US": " Work WeChat "},
+					"value":      "  https://work.weixin.qq.com/kfid/demo  ",
+					"target":     "_self",
+					"qr_code":    "  /uploads/contact/work-wechat.png  ",
+					"enabled":    true,
+					"sort_order": "8",
+				},
+				map[string]interface{}{
+					"type":  "qq",
+					"label": map[string]interface{}{"zh-CN": ""},
+					"value": "",
+				},
+			},
 		},
 		"seo": map[string]interface{}{
 			"title": map[string]interface{}{
@@ -182,6 +199,20 @@ func TestUpdateSiteSettingNormalized(t *testing.T) {
 	}
 	if contact["whatsapp"] != "" {
 		t.Fatalf("unexpected whatsapp: %v", contact["whatsapp"])
+	}
+	contactItems, ok := contact["items"].([]interface{})
+	if !ok || len(contactItems) != 1 {
+		t.Fatalf("unexpected contact items: %#v", contact["items"])
+	}
+	firstContact, ok := contactItems[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("invalid contact item type: %T", contactItems[0])
+	}
+	if firstContact["type"] != "wechat_work" || firstContact["value"] != "https://work.weixin.qq.com/kfid/demo" {
+		t.Fatalf("unexpected contact item payload: %#v", firstContact)
+	}
+	if firstContact["target"] != "_self" || firstContact["qr_code"] != "/uploads/contact/work-wechat.png" || firstContact["sort_order"] != 8 {
+		t.Fatalf("unexpected contact item metadata: %#v", firstContact)
 	}
 
 	seo, ok := result["seo"].(map[string]interface{})
@@ -312,6 +343,54 @@ func TestUpdateSiteSettingNormalized(t *testing.T) {
 	}
 	if thirdScript["position"] != "head" || thirdScript["enabled"] != false {
 		t.Fatalf("unexpected scripts[2]: %+v", thirdScript)
+	}
+}
+
+func TestUpdateSiteSettingPreservesContactItemsWhenMissing(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := NewSettingService(repo)
+
+	_, err := svc.Update(constants.SettingKeySiteConfig, map[string]interface{}{
+		"contact": map[string]interface{}{
+			"telegram": "https://t.me/old",
+			"items": []interface{}{
+				map[string]interface{}{
+					"type":    "qq",
+					"label":   map[string]interface{}{"zh-CN": "QQ", "en-US": "QQ"},
+					"value":   "123456",
+					"enabled": true,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed site config failed: %v", err)
+	}
+
+	result, err := svc.Update(constants.SettingKeySiteConfig, map[string]interface{}{
+		"contact": map[string]interface{}{
+			"telegram": "https://t.me/new",
+			"whatsapp": "",
+		},
+	})
+	if err != nil {
+		t.Fatalf("update site config failed: %v", err)
+	}
+
+	contact, ok := result["contact"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("invalid contact payload type: %T", result["contact"])
+	}
+	if contact["telegram"] != "https://t.me/new" {
+		t.Fatalf("unexpected telegram: %v", contact["telegram"])
+	}
+	items, ok := contact["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected preserved contact items, got %#v", contact["items"])
+	}
+	item, ok := items[0].(map[string]interface{})
+	if !ok || item["type"] != "qq" || item["value"] != "123456" {
+		t.Fatalf("unexpected preserved contact item: %#v", items[0])
 	}
 }
 
