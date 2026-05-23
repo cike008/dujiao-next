@@ -12,6 +12,18 @@ List current items:
 ADMIN_TOKEN=... scripts/contact-items.sh list
 ```
 
+Create a local backup of current items:
+
+```bash
+ADMIN_TOKEN=... scripts/contact-items.sh backup
+```
+
+Validate a JSON file before applying it:
+
+```bash
+scripts/contact-items.sh validate examples/contact-items.example.json
+```
+
 Apply a JSON file:
 
 ```bash
@@ -20,6 +32,10 @@ ADMIN_TOKEN=... scripts/contact-items.sh apply examples/contact-items.example.js
 
 `ADMIN_TOKEN` must be an admin bearer token with `system_admin` permission for
 updates. Read-only admins can call `GET`, but cannot update.
+
+`apply` validates the JSON file and writes a timestamped backup to
+`contact-items-backups/` before updating. Set `SKIP_BACKUP=1` only when you have
+already saved a backup elsewhere.
 
 ## JSON Shape
 
