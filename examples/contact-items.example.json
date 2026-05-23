@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "type": "wechat_work",
+      "label": {
+        "zh-CN": "企业微信",
+        "zh-TW": "企業微信",
+        "en-US": "WeCom"
+      },
+      "value": "https://work.weixin.qq.com/kfid/example",
+      "qr_code": "/uploads/contact/wecom.png",
+      "target": "_blank",
+      "enabled": true,
+      "sort_order": 10
+    },
+    {
+      "type": "qq",
+      "label": {
+        "zh-CN": "QQ客服",
+        "zh-TW": "QQ客服",
+        "en-US": "QQ Support"
+      },
+      "value": "123456789",
+      "enabled": true,
+      "sort_order": 20
+    },
+    {
+      "type": "email",
+      "label": {
+        "zh-CN": "邮箱",
+        "zh-TW": "信箱",
+        "en-US": "Email"
+      },
+      "value": "support@example.com",
+      "enabled": false,
+      "sort_order": 30
+    }
+  ]
+}
