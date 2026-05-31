@@ -228,6 +228,9 @@ func setupMappingWithUpstreamHandler(t *testing.T, dsn string, handler http.Hand
 	if err != nil {
 		t.Fatalf("create connection failed: %v", err)
 	}
+	if err := connService.SetStatus(conn.ID, constants.ConnectionStatusActive); err != nil {
+		t.Fatalf("activate connection failed: %v", err)
+	}
 
 	mappingRepo := repository.NewProductMappingRepository(db)
 	skuMappingRepo := repository.NewSKUMappingRepository(db)
@@ -357,6 +360,72 @@ func listProductsHandler(items []upstream.UpstreamProduct, includesInactive bool
 			"page_size":         50,
 			"includes_inactive": includesInactive,
 		})
+	}
+}
+
+func TestSyncConnectionStockDisablesConnectionOnAuthError(t *testing.T) {
+	svc, db, mapping, cleanup := setupMappingWithUpstreamHandler(t,
+		"file:sync_auth_error_disables_connection?mode=memory&cache=shared",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":            false,
+				"error_code":    "invalid_api_key",
+				"error_message": "api key is invalid or disabled",
+			})
+		},
+	)
+	defer cleanup()
+
+	if err := svc.syncConnectionStock(mapping.ConnectionID, []models.ProductMapping{*mapping}); err != nil {
+		t.Fatalf("auth error should be handled without retrying task, got %v", err)
+	}
+
+	var conn models.SiteConnection
+	if err := db.First(&conn, mapping.ConnectionID).Error; err != nil {
+		t.Fatalf("reload connection failed: %v", err)
+	}
+	if conn.Status != constants.ConnectionStatusDisabled {
+		t.Fatalf("expected connection to be disabled after auth error, got %q", conn.Status)
+	}
+	if conn.LastPingOK {
+		t.Fatalf("expected LastPingOK=false after auth error")
+	}
+	if conn.LastPingAt == nil {
+		t.Fatalf("expected LastPingAt to be updated after auth error")
+	}
+
+	var got models.ProductMapping
+	if err := db.First(&got, mapping.ID).Error; err != nil {
+		t.Fatalf("reload mapping failed: %v", err)
+	}
+	if got.UpstreamStatus != models.UpstreamStatusActive || !got.IsActive {
+		t.Fatalf("auth error must not change mapping availability, got status=%q active=%v", got.UpstreamStatus, got.IsActive)
+	}
+}
+
+func TestSyncConnectionStockSkipsInactiveConnection(t *testing.T) {
+	var calls int
+	svc, db, mapping, cleanup := setupMappingWithUpstreamHandler(t,
+		"file:sync_skip_inactive_connection?mode=memory&cache=shared",
+		func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		},
+	)
+	defer cleanup()
+
+	if err := db.Model(&models.SiteConnection{}).Where("id = ?", mapping.ConnectionID).
+		Update("status", constants.ConnectionStatusDisabled).Error; err != nil {
+		t.Fatalf("disable connection failed: %v", err)
+	}
+	if err := svc.syncConnectionStock(mapping.ConnectionID, []models.ProductMapping{*mapping}); err != nil {
+		t.Fatalf("syncConnectionStock returned error: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected inactive connection to be skipped without upstream call, got %d calls", calls)
 	}
 }
 

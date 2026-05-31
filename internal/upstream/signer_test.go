@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -81,5 +82,20 @@ func TestParseTimestamp(t *testing.T) {
 	_, err = ParseTimestamp("not-a-number")
 	if err == nil {
 		t.Fatal("expected error for non-numeric string")
+	}
+}
+
+func TestIsAuthError(t *testing.T) {
+	if !IsAuthError(&upstreamHTTPError{Status: 403, Code: "invalid_api_key"}) {
+		t.Fatal("invalid_api_key should be treated as auth error")
+	}
+	if !IsAuthError(fmt.Errorf("wrapped: %w", &upstreamHTTPError{Status: 401, Code: "anything"})) {
+		t.Fatal("wrapped 401 should be treated as auth error")
+	}
+	if IsAuthError(&upstreamHTTPError{Status: 500, Code: "server_error"}) {
+		t.Fatal("server error should not be treated as auth error")
+	}
+	if IsAuthError(fmt.Errorf("plain error")) {
+		t.Fatal("plain error should not be treated as auth error")
 	}
 }

@@ -392,6 +392,14 @@ func (s *ProductMappingService) syncConnectionStock(connectionID uint, connMappi
 	if err != nil || conn == nil {
 		return fmt.Errorf("get connection %d: %w", connectionID, err)
 	}
+	if conn.Status != constants.ConnectionStatusActive {
+		logger.Debugw("sync_connection_stock_skip_inactive_connection",
+			"connection_id", connectionID,
+			"status", conn.Status,
+			"mappings", len(connMappings),
+		)
+		return nil
+	}
 
 	adapter, err := s.connService.GetAdapter(conn)
 	if err != nil {
@@ -451,6 +459,23 @@ func (s *ProductMappingService) syncConnectionStock(connectionID uint, connMappi
 		})
 		cancel()
 		if err != nil {
+			if upstream.IsAuthError(err) {
+				conn.Status = constants.ConnectionStatusDisabled
+				conn.LastPingOK = false
+				now := time.Now()
+				conn.LastPingAt = &now
+				if updateErr := s.connService.connRepo.Update(conn); updateErr != nil {
+					logger.Warnw("sync_connection_stock_disable_connection_failed",
+						"connection_id", connectionID,
+						"error", updateErr,
+					)
+				}
+				logger.Warnw("sync_connection_stock_disabled_auth_failed",
+					"connection_id", connectionID,
+					"error", err,
+				)
+				return nil
+			}
 			// 增量拉取失败时回退到全量
 			if updatedAfter != nil {
 				logger.Warnw("sync_incremental_failed_fallback_full", "connection_id", connectionID, "error", err)

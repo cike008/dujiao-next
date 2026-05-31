@@ -43,6 +43,24 @@ func extractUpstreamErrorCode(err error) string {
 	return ""
 }
 
+// IsAuthError 判断上游错误是否为认证/授权失败。
+func IsAuthError(err error) bool {
+	var ue *upstreamHTTPError
+	if !errors.As(err, &ue) {
+		return false
+	}
+	if ue.Status == http.StatusUnauthorized || ue.Status == http.StatusForbidden {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(ue.Code))
+	return code == "invalid_api_key" ||
+		code == "invalid_signature" ||
+		code == "invalid_timestamp" ||
+		code == "api_key_disabled" ||
+		code == "unauthorized" ||
+		code == "forbidden"
+}
+
 // DujiaoNextAdapter Dujiao-Next 协议适配器
 type DujiaoNextAdapter struct {
 	baseURL    string
