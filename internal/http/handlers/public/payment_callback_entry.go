@@ -55,6 +55,7 @@ func (h *Handler) PaymentCallback(c *gin.Context) {
 }
 
 func parseCallbackForm(c *gin.Context) (map[string][]string, error) {
+	normalizeCallbackRequestQuery(c.Request)
 	if err := c.Request.ParseForm(); err != nil {
 		return nil, err
 	}
@@ -62,6 +63,30 @@ func parseCallbackForm(c *gin.Context) (map[string][]string, error) {
 		return c.Request.PostForm, nil
 	}
 	return c.Request.Form, nil
+}
+
+// normalizeCallbackRequestQuery 兼容部分网关或中间层产生的非标准 query 格式：
+//  1. 将 HTML 转义的 &amp; 还原为 &（否则会被解析成名为 amp; 开头的参数）
+//  2. 将以 ; 分隔的参数兼容转换为 & 分隔（Go 1.17+ 的 url.ParseQuery 不再接受 ; 作为分隔符，
+//     否则 ParseForm 会返回 "invalid semicolon separator in query" 并导致回调无法识别）
+func normalizeCallbackRequestQuery(r *http.Request) {
+	if r == nil || r.URL == nil {
+		return
+	}
+	raw := r.URL.RawQuery
+	if raw == "" {
+		return
+	}
+	normalized := raw
+	if strings.Contains(normalized, "&amp;") {
+		normalized = strings.ReplaceAll(normalized, "&amp;", "&")
+	}
+	if strings.Contains(normalized, ";") {
+		normalized = strings.ReplaceAll(normalized, ";", "&")
+	}
+	if normalized != raw {
+		r.URL.RawQuery = normalized
+	}
 }
 
 func getFirstValue(form map[string][]string, key string) string {

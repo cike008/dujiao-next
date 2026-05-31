@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dujiao-next/internal/constants"
+	"github.com/dujiao-next/internal/dto"
 	"github.com/dujiao-next/internal/http/response"
 	"github.com/dujiao-next/internal/i18n"
 	"github.com/dujiao-next/internal/logger"
@@ -900,6 +901,14 @@ func buildChannelPaymentResponse(order *models.Order, payment *models.Payment) g
 		"callback_at":      payment.CallbackAt,
 		"created_at":       payment.CreatedAt,
 		"updated_at":       payment.UpdatedAt,
+	}
+	if addr, chainAmount := dto.ExtractUSDTWalletInfo(payment.ProviderType, payment.InteractionMode, payment.ProviderPayload); addr != "" || chainAmount != "" {
+		if addr != "" {
+			resp["wallet_address"] = addr
+		}
+		if chainAmount != "" {
+			resp["chain_amount"] = chainAmount
+		}
 	}
 	if order != nil {
 		resp["order_no"] = order.OrderNo

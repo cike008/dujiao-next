@@ -43,6 +43,11 @@ telegram_auth:
   enabled: false
   bot_username: ""  # Telegram Bot 用户名（不含 @）
   bot_token: ""     # Telegram Bot Token（敏感）
+  # 新版 OIDC 登录（可选）：在 @BotFather → Bot Settings → Web Login 获取 Client Secret，
+  # 并把本商城域名 origin 与下面的回调地址都加入 Allowed URLs。
+  # 同时填写 client_secret + oidc_redirect_uri 后自动切换为新版 OIDC 登录；否则沿用旧版 Login Widget。
+  client_secret: ""        # OIDC Client Secret（敏感）
+  oidc_redirect_uri: ""    # 形如 https://你的商城域名/auth/telegram/callback
   mini_app_url: ""  # Telegram Mini App 页面地址（需与 BotFather Web App URL 保持一致）
   login_expire_seconds: 300
   replay_ttl_seconds: 300

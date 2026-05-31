@@ -24,6 +24,7 @@ type ProductService struct {
 	cartRepo             repository.CartRepository
 	productMappingRepo   repository.ProductMappingRepository
 	orderRepo            repository.OrderRepository
+	paymentChannelRepo   repository.PaymentChannelRepository
 }
 
 // NewProductService 创建商品服务
@@ -37,6 +38,7 @@ func NewProductService(
 	cartRepo repository.CartRepository,
 	productMappingRepo repository.ProductMappingRepository,
 	orderRepo repository.OrderRepository,
+	paymentChannelRepo repository.PaymentChannelRepository,
 ) *ProductService {
 	return &ProductService{
 		repo:                 repo,
@@ -48,7 +50,55 @@ func NewProductService(
 		cartRepo:             cartRepo,
 		productMappingRepo:   productMappingRepo,
 		orderRepo:            orderRepo,
+		paymentChannelRepo:   paymentChannelRepo,
 	}
+}
+
+func (s *ProductService) filterAvailablePaymentChannelIDs(ids []uint) ([]uint, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	uniqueIDs := make([]uint, 0, len(ids))
+	seen := make(map[uint]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	if len(uniqueIDs) == 0 {
+		return nil, nil
+	}
+	if s.paymentChannelRepo == nil {
+		return uniqueIDs, nil
+	}
+
+	channels, err := s.paymentChannelRepo.ListByIDs(uniqueIDs)
+	if err != nil {
+		return nil, err
+	}
+	activeIDs := make(map[uint]struct{}, len(channels))
+	for _, channel := range channels {
+		if channel.IsActive {
+			activeIDs[channel.ID] = struct{}{}
+		}
+	}
+
+	filtered := make([]uint, 0, len(uniqueIDs))
+	for _, id := range uniqueIDs {
+		if _, ok := activeIDs[id]; ok {
+			filtered = append(filtered, id)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, nil
+	}
+	return filtered, nil
 }
 
 // CreateProductInput 创建/更新商品输入
@@ -241,6 +291,10 @@ func (s *ProductService) Create(input CreateProductInput) (*models.Product, erro
 		}
 		costPriceAmount = minActiveCostPrice(normalizedSKUs)
 	}
+	paymentChannelIDs, err := s.filterAvailablePaymentChannelIDs(input.PaymentChannelIDs)
+	if err != nil {
+		return nil, err
+	}
 
 	product := models.Product{
 		CategoryID:           input.CategoryID,
@@ -262,7 +316,7 @@ func (s *ProductService) Create(input CreateProductInput) (*models.Product, erro
 		ManualStockTotal:     manualStockTotal,
 		ManualStockLocked:    0,
 		ManualStockSold:      0,
-		PaymentChannelIDs:    EncodeChannelIDs(input.PaymentChannelIDs),
+		PaymentChannelIDs:    EncodeChannelIDs(paymentChannelIDs),
 		IsAffiliateEnabled:   isAffiliateEnabled,
 		IsActive:             isActive,
 		SortOrder:            input.SortOrder,
@@ -336,7 +390,11 @@ func (s *ProductService) Update(id string, input CreateProductInput) (*models.Pr
 	product.SortOrder = input.SortOrder
 	product.Images = models.StringArray(input.Images)
 	product.Tags = models.StringArray(input.Tags)
-	product.PaymentChannelIDs = EncodeChannelIDs(input.PaymentChannelIDs)
+	paymentChannelIDs, err := s.filterAvailablePaymentChannelIDs(input.PaymentChannelIDs)
+	if err != nil {
+		return nil, err
+	}
+	product.PaymentChannelIDs = EncodeChannelIDs(paymentChannelIDs)
 	if input.IsActive != nil {
 		product.IsActive = *input.IsActive
 	}
@@ -969,10 +1027,89 @@ func (s *ProductService) QuickUpdate(id string, fields map[string]interface{}) (
 	if product == nil {
 		return nil, ErrNotFound
 	}
+	if isQuickUpdateActivatingProduct(fields) {
+		categoryID := product.CategoryID
+		if rawCategoryID, ok := fields["category_id"]; ok {
+			parsedCategoryID, parseErr := quickUpdateCategoryID(rawCategoryID)
+			if parseErr != nil {
+				return nil, ErrProductCategoryInvalid
+			}
+			categoryID = parsedCategoryID
+		}
+		if err := validateProductActivationCategory(s.categoryRepo, categoryID); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.repo.QuickUpdate(id, fields); err != nil {
 		return nil, err
 	}
 	return s.repo.GetByID(id)
+}
+
+func isQuickUpdateActivatingProduct(fields map[string]interface{}) bool {
+	raw, ok := fields["is_active"]
+	if !ok {
+		return false
+	}
+	value, ok := raw.(bool)
+	return ok && value
+}
+
+func quickUpdateCategoryID(value interface{}) (uint, error) {
+	switch v := value.(type) {
+	case uint:
+		return v, nil
+	case uint64:
+		return uint(v), nil
+	case uint32:
+		return uint(v), nil
+	case int:
+		if v < 0 {
+			return 0, ErrProductCategoryInvalid
+		}
+		return uint(v), nil
+	case int64:
+		if v < 0 {
+			return 0, ErrProductCategoryInvalid
+		}
+		return uint(v), nil
+	case int32:
+		if v < 0 {
+			return 0, ErrProductCategoryInvalid
+		}
+		return uint(v), nil
+	case float64:
+		if v < 0 || v != float64(uint(v)) {
+			return 0, ErrProductCategoryInvalid
+		}
+		return uint(v), nil
+	default:
+		return 0, ErrProductCategoryInvalid
+	}
+}
+
+func validateProductActivationCategory(categoryRepo repository.CategoryRepository, categoryID uint) error {
+	if categoryID == 0 || categoryRepo == nil {
+		return ErrProductCategoryInvalid
+	}
+
+	categoryIDText := strconv.FormatUint(uint64(categoryID), 10)
+	category, err := categoryRepo.GetByID(categoryIDText)
+	if err != nil {
+		return err
+	}
+	if category == nil || !category.IsActive {
+		return ErrProductCategoryInvalid
+	}
+
+	childCount, err := categoryRepo.CountChildren(categoryIDText)
+	if err != nil {
+		return err
+	}
+	if childCount > 0 {
+		return ErrProductCategoryInvalid
+	}
+	return nil
 }
 
 // ApplyAutoStockCounts 聚合卡密自动发货库存信息并填充到商品中
