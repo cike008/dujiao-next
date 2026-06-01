@@ -20,6 +20,10 @@ echo "--- image versions ---"
 $SSH "docker inspect dujiaonext-api --format 'api_image={{.Config.Image}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' && docker inspect dujiaonext-admin --format 'admin_image={{.Config.Image}} status={{.State.Status}}'"
 
 echo
+echo "--- tag drift check ---"
+$SSH "cd /opt/dujiao-next && env_tag=\$(sed -n 's/^TAG=//p' .env | head -1) && admin_image=\$(docker inspect dujiaonext-admin --format '{{.Config.Image}}') && admin_tag=\${admin_image##*:} && printf 'env_tag=%s admin_tag=%s\n' \"\$env_tag\" \"\$admin_tag\" && if [ \"\$env_tag\" != \"\$admin_tag\" ]; then printf 'WARNING: .env TAG does not match the running admin image tag. Future plain docker compose up may recreate admin with the old tag.\n'; fi"
+
+echo
 echo "--- public version ---"
 $SSH "curl -fsSL http://127.0.0.1:8081/api/v1/public/config | grep -o '\"app_version\":\"[^\"]*\"' || true"
 
@@ -46,4 +50,3 @@ $SSH "docker exec dujiaonext-api sh -lc \"tail -n 300 /app/logs/app.log 2>/dev/n
 echo
 echo "--- recent callback/teamgenie/fulfillment logs ---"
 $SSH "docker logs --tail=300 dujiaonext-api 2>&1 | grep -E 'callback|teamgenie_sync|fulfillment' | tail -n 80 || true"
-
