@@ -12,6 +12,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetSystemVersion 返回当前 API 版本。
+// GET /api/v1/admin/system/version
+func (h *Handler) GetSystemVersion(c *gin.Context) {
+	current := version.Version
+	response.Success(c, gin.H{
+		"version":         current,
+		"current_version": current,
+		"api_version":     current,
+		"source":          "build",
+	})
+}
+
 // CheckSystemUpdate 通过 GitHub Releases API 检测是否有新版本发布
 // GET /api/v1/admin/system/version/check
 func (h *Handler) CheckSystemUpdate(c *gin.Context) {

@@ -334,6 +334,7 @@ func SetupRouter(cfg *config.Config, c *provider.Container) *gin.Engine {
 				authorized.PUT("/password", adminHandler.UpdateAdminPassword) // 修改密码
 
 				// 系统信息与版本检测
+				authorized.GET("/system/version", adminHandler.GetSystemVersion)
 				authorized.GET("/system/version/check", adminHandler.CheckSystemUpdate)
 
 				authorized.GET("/2fa/status", adminHandler.Get2FAStatus)
