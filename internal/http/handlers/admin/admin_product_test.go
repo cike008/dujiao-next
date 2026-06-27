@@ -119,3 +119,146 @@ func TestBatchUpdateProductStatusReturnsFailureReasons(t *testing.T) {
 		t.Fatalf("expected product_category_invalid, got %q", resp.Data.FailedItems[0].ErrorCode)
 	}
 }
+
+func TestUpdateProductWholesalePricesHandlerUpdatesTiers(t *testing.T) {
+	h, db := setupAdminProductHandlerTest(t)
+
+	product := models.Product{
+		CategoryID:  1,
+		Slug:        "handler-wholesale-product",
+		TitleJSON:   models.JSON{"zh-CN": "handler-wholesale-product"},
+		PriceAmount: models.NewMoneyFromDecimal(decimal.NewFromInt(100)),
+		IsActive:    true,
+	}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatalf("create product failed: %v", err)
+	}
+
+	body := `{"wholesale_prices":[{"min_quantity":10,"unit_price":70},{"min_quantity":5,"unit_price":80}]}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/products/1/wholesale-prices", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", product.ID)}}
+
+	h.UpdateProductWholesalePrices(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data models.Product `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v body=%s", err, w.Body.String())
+	}
+	if len(resp.Data.WholesalePrices) != 2 {
+		t.Fatalf("expected 2 wholesale tiers, got %+v", resp.Data.WholesalePrices)
+	}
+	if resp.Data.WholesalePrices[0].MinQuantity != 5 || resp.Data.WholesalePrices[0].UnitPrice.String() != "80.00" {
+		t.Fatalf("expected sorted first tier min=5 price=80.00, got %+v", resp.Data.WholesalePrices[0])
+	}
+}
+
+func TestUpdateProductWholesalePricesHandlerAllowsClear(t *testing.T) {
+	h, db := setupAdminProductHandlerTest(t)
+
+	product := models.Product{
+		CategoryID:  1,
+		Slug:        "handler-wholesale-clear",
+		TitleJSON:   models.JSON{"zh-CN": "handler-wholesale-clear"},
+		PriceAmount: models.NewMoneyFromDecimal(decimal.NewFromInt(100)),
+		WholesalePrices: models.WholesalePriceTiers{
+			{MinQuantity: 5, UnitPrice: models.NewMoneyFromDecimal(decimal.NewFromInt(80))},
+		},
+		IsActive: true,
+	}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatalf("create product failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/products/1/wholesale-prices", strings.NewReader(`{"wholesale_prices":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", product.ID)}}
+
+	h.UpdateProductWholesalePrices(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var got models.Product
+	if err := db.First(&got, product.ID).Error; err != nil {
+		t.Fatalf("reload product failed: %v", err)
+	}
+	if len(got.WholesalePrices) != 0 {
+		t.Fatalf("expected wholesale prices cleared, got %+v", got.WholesalePrices)
+	}
+}
+
+func TestUpdateProductWholesalePricesHandlerRejectsInvalidTier(t *testing.T) {
+	h, db := setupAdminProductHandlerTest(t)
+
+	product := models.Product{
+		CategoryID:  1,
+		Slug:        "handler-wholesale-invalid",
+		TitleJSON:   models.JSON{"zh-CN": "handler-wholesale-invalid"},
+		PriceAmount: models.NewMoneyFromDecimal(decimal.NewFromInt(100)),
+		IsActive:    true,
+	}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatalf("create product failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/products/1/wholesale-prices", strings.NewReader(`{"wholesale_prices":[{"min_quantity":0,"unit_price":80}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", product.ID)}}
+
+	h.UpdateProductWholesalePrices(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("project response wrapper should still return HTTP 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		StatusCode int    `json:"status_code"`
+		Msg        string `json:"msg"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v body=%s", err, w.Body.String())
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected wholesale invalid response, got status_code=%d body=%s", resp.StatusCode, w.Body.String())
+	}
+}
+
+func TestUpdateProductWholesalePricesHandlerReturnsNotFound(t *testing.T) {
+	h, _ := setupAdminProductHandlerTest(t)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/products/999999/wholesale-prices", strings.NewReader(`{"wholesale_prices":[{"min_quantity":5,"unit_price":80}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: "999999"}}
+
+	h.UpdateProductWholesalePrices(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("project response wrapper should still return HTTP 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		StatusCode int `json:"status_code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v body=%s", err, w.Body.String())
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected product not found response, got body=%s", w.Body.String())
+	}
+}

@@ -108,6 +108,8 @@ type WalletRechargePaymentPayload struct {
 	QRCode          string              `json:"qr_code,omitempty"`
 	WalletAddress   string              `json:"wallet_address,omitempty"`
 	ChainAmount     string              `json:"chain_amount,omitempty"`
+	Chain           string              `json:"chain,omitempty"`
+	TokenID         string              `json:"token_id,omitempty"`
 	ExpiresAt       *time.Time          `json:"expires_at,omitempty"`
 	Status          string              `json:"status,omitempty"`
 }
@@ -134,11 +136,15 @@ func NewWalletRechargePaymentPayload(recharge *models.WalletRechargeOrder, payme
 		p.QRCode = payment.QRCode
 		p.ExpiresAt = payment.ExpiredAt
 		p.Status = payment.Status
-		p.WalletAddress, p.ChainAmount = ExtractUSDTWalletInfo(
+		info := ExtractCryptoWalletInfo(
 			payment.ProviderType,
 			payment.InteractionMode,
 			payment.ProviderPayload,
 		)
+		p.WalletAddress = info.Address
+		p.ChainAmount = info.ChainAmount
+		p.Chain = info.Chain
+		p.TokenID = info.TokenID
 	}
 	return p
 	// 排除 Payment 的：OrderID、ChannelID、Amount、FeeRate、FixedFee、FeeAmount、Currency、

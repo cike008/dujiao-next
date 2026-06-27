@@ -62,6 +62,12 @@ func (a *tokenpayAdapter) CreatePayment(ctx context.Context, raw models.JSON, in
 	// tokenpay 特殊字段，用户标识符
 	orderUserKey, _ := input.Extra["order_user_key"].(string)
 
+	redirectURL := strings.TrimSpace(input.ReturnURL)
+	if redirectURL == "" {
+		redirectURL = strings.TrimSpace(cfg.RedirectURL)
+	}
+	redirectURL = appendQueryParams(redirectURL, input.ReturnURLQuery)
+
 	// Currency 是 TokenPay 的“加密货币币种”（如 USDT_TRC20 / TRX），必须取自渠道配置 cfg.Currency。
 	// 切勿使用 input.Currency——那是订单法币币种（CNY/USD 等），它对应 TokenPay 的 ActualAmount 金额币种。
 	native := tokenpay.CreateInput{
@@ -70,7 +76,7 @@ func (a *tokenpayAdapter) CreatePayment(ctx context.Context, raw models.JSON, in
 		ActualAmount: input.Amount.Decimal.String(),
 		Currency:     cfg.Currency,
 		NotifyURL:    input.NotifyURL,
-		RedirectURL:  input.ReturnURL,
+		RedirectURL:  redirectURL,
 	}
 	result, err := tokenpay.CreatePayment(ctx, cfg, native)
 	if err != nil {

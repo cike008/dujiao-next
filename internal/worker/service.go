@@ -60,6 +60,15 @@ func registerPeriodicTasks(scheduler *asynq.Scheduler, consumer *Consumer, cfg *
 			logger.Infow("scheduler_register_affiliate_confirm_ok", "entry_id", entryID)
 		}
 	}
+	if consumer.ResellerAccountingService != nil {
+		task := queue.NewResellerConfirmLedgerTask()
+		entryID, err := scheduler.Register("@every 1m", task, asynq.Queue(queue.DefaultQueue))
+		if err != nil {
+			logger.Warnw("scheduler_register_reseller_confirm_ledger_failed", "error", err)
+		} else {
+			logger.Infow("scheduler_register_reseller_confirm_ledger_ok", "entry_id", entryID)
+		}
+	}
 	if consumer.ProductMappingService != nil {
 		fallbackInterval := "5m"
 		if cfg != nil && cfg.UpstreamSyncInterval != "" {

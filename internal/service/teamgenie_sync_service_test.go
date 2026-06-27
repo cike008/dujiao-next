@@ -27,6 +27,15 @@ func (r teamGenieTestUserRepo) List(repository.UserListFilter) ([]models.User, i
 	return nil, 0, nil
 }
 func (r teamGenieTestUserRepo) BatchUpdateStatus([]uint, string) error { return nil }
+func (r teamGenieTestUserRepo) IncrementTotalRecharged(uint, decimal.Decimal) error {
+	return nil
+}
+func (r teamGenieTestUserRepo) IncrementTotalSpent(uint, decimal.Decimal) error {
+	return nil
+}
+func (r teamGenieTestUserRepo) UpdateMemberLevelIfCurrent(uint, uint, uint) (int64, error) {
+	return 0, nil
+}
 func (r teamGenieTestUserRepo) AssignDefaultMemberLevel(uint) (int64, error) {
 	return 0, nil
 }

@@ -52,6 +52,7 @@ type OrderRefundService struct {
 	orderRefundRecordRepo repository.OrderRefundRecordRepository
 	affiliateSvc          *AffiliateService
 	settingService        *SettingService
+	resellerAccountingSvc *ResellerAccountingService
 }
 
 // OrderStatusEmailRefundDetails 订单状态邮件中的退款信息
@@ -99,6 +100,10 @@ func NewOrderRefundService(
 		affiliateSvc:          affiliateSvc,
 		settingService:        settingService,
 	}
+}
+
+func (s *OrderRefundService) SetResellerAccountingService(svc *ResellerAccountingService) {
+	s.resellerAccountingSvc = svc
 }
 
 // ParseRefundAmount 解析并校验退款金额。
@@ -285,6 +290,11 @@ func (s *OrderRefundService) AdminManualRefund(input AdminManualRefundInput) (*m
 				return ErrOrderUpdateFailed
 			}
 		}
+		record, err := s.createRefundRecordTx(tx, &order, constants.OrderRefundTypeManual, amount, recordRemark, now)
+		if err != nil {
+			return err
+		}
+		createdRecord = record
 		if s.affiliateSvc != nil && order.UserID > 0 {
 			if err := s.affiliateSvc.HandleOrderRefundedTx(
 				tx,
@@ -296,11 +306,11 @@ func (s *OrderRefundService) AdminManualRefund(input AdminManualRefundInput) (*m
 				return err
 			}
 		}
-		record, err := s.createRefundRecordTx(tx, &order, constants.OrderRefundTypeManual, amount, recordRemark, now)
-		if err != nil {
-			return err
+		if s.resellerAccountingSvc != nil {
+			if err := s.resellerAccountingSvc.HandleRefundDeductTx(tx, &order, record, refundedBefore); err != nil {
+				return err
+			}
 		}
-		createdRecord = record
 		return nil
 	}); err != nil {
 		return nil, nil, err
@@ -575,13 +585,9 @@ func collectRefundItems(order *models.Order) []models.OrderItem {
 		return nil
 	}
 	result := make([]models.OrderItem, 0, len(order.Items))
-	for i := range order.Items {
-		result = append(result, order.Items[i])
-	}
+	result = append(result, order.Items...)
 	for i := range order.Children {
-		for j := range order.Children[i].Items {
-			result = append(result, order.Children[i].Items[j])
-		}
+		result = append(result, order.Children[i].Items...)
 	}
 	return result
 }

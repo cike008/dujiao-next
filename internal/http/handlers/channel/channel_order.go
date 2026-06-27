@@ -3,12 +3,12 @@ package channel
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dujiao-next/internal/constants"
 	"github.com/dujiao-next/internal/dto"
+	"github.com/dujiao-next/internal/http/handlers/shared"
 	"github.com/dujiao-next/internal/http/response"
 	"github.com/dujiao-next/internal/i18n"
 	"github.com/dujiao-next/internal/logger"
@@ -197,6 +197,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		"original_amount":    order.OriginalAmount.StringFixed(2),
 		"coupon_discount":    order.DiscountAmount.StringFixed(2),
 		"promotion_discount": order.PromotionDiscountAmount.StringFixed(2),
+		"wholesale_discount": order.WholesaleDiscountAmount.StringFixed(2),
 		"total_amount":       order.TotalAmount.StringFixed(2),
 		"wallet_paid_amount": order.WalletPaidAmount.StringFixed(2),
 		"online_paid_amount": order.OnlinePaidAmount.StringFixed(2),
@@ -438,7 +439,7 @@ func (h *Handler) CreatePayment(c *gin.Context) {
 
 // GetOrderStatus GET /api/v1/channel/orders/:id
 func (h *Handler) GetOrderStatus(c *gin.Context) {
-	orderID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	orderID, err := shared.ParseParamUint(c, "id")
 	if err != nil {
 		respondChannelError(c, 400, response.CodeBadRequest, "validation_error", "error.bad_request", nil)
 		return
@@ -457,7 +458,7 @@ func (h *Handler) GetOrderStatus(c *gin.Context) {
 		return
 	}
 
-	order, err := h.OrderService.GetOrderByUser(uint(orderID), userID)
+	order, err := h.OrderService.GetOrderByUser(orderID, userID)
 	if err != nil {
 		if errors.Is(err, service.ErrOrderNotFound) {
 			respondChannelError(c, 404, response.CodeNotFound, "order_not_found", "error.order_not_found", nil)
@@ -518,7 +519,7 @@ func (h *Handler) GetOrderByOrderNo(c *gin.Context) {
 
 // CancelOrder POST /api/v1/channel/orders/:id/cancel
 func (h *Handler) CancelOrder(c *gin.Context) {
-	orderID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	orderID, err := shared.ParseParamUint(c, "id")
 	if err != nil {
 		respondChannelError(c, 400, response.CodeBadRequest, "validation_error", "error.bad_request", nil)
 		return
@@ -543,7 +544,7 @@ func (h *Handler) CancelOrder(c *gin.Context) {
 		return
 	}
 
-	order, err := h.OrderService.CancelOrder(uint(orderID), userID)
+	order, err := h.OrderService.CancelOrder(orderID, userID)
 	if err != nil {
 		logger.Errorw("channel_order_cancel", "order_id", orderID, "error", err)
 		if errors.Is(err, service.ErrOrderNotFound) {
@@ -577,14 +578,7 @@ func (h *Handler) ListOrders(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "5"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize <= 0 || pageSize > 20 {
-		pageSize = 5
-	}
+	page, pageSize := shared.ParsePaginationWithBounds(c, "page", "page_size", 5, 20)
 	status := c.Query("status")
 	locale := channelLocaleValue(c, c.Query("locale"))
 
@@ -634,8 +628,8 @@ func (h *Handler) ListOrders(c *gin.Context) {
 
 // GetPaymentDetail GET /api/v1/channel/payments/:id
 func (h *Handler) GetPaymentDetail(c *gin.Context) {
-	paymentID, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil || paymentID == 0 {
+	paymentID, err := shared.ParseParamUint(c, "id")
+	if err != nil {
 		respondChannelError(c, 400, response.CodeBadRequest, "validation_error", "error.bad_request", nil)
 		return
 	}
@@ -722,6 +716,7 @@ func buildChannelOrderPreviewResponse(preview *service.OrderPreview, locale stri
 			"subtotal":             item.TotalPrice.StringFixed(2),
 			"coupon_discount":      item.CouponDiscount.StringFixed(2),
 			"promotion_discount":   item.PromotionDiscount.StringFixed(2),
+			"wholesale_discount":   item.WholesaleDiscount.StringFixed(2),
 			"fulfillment_type":     item.FulfillmentType,
 		})
 	}
@@ -731,6 +726,7 @@ func buildChannelOrderPreviewResponse(preview *service.OrderPreview, locale stri
 		"items":              items,
 		"coupon_discount":    preview.DiscountAmount.StringFixed(2),
 		"promotion_discount": preview.PromotionDiscountAmount.StringFixed(2),
+		"wholesale_discount": preview.WholesaleDiscountAmount.StringFixed(2),
 		"total_amount":       preview.TotalAmount.StringFixed(2),
 		"currency":           preview.Currency,
 		"valid":              true,
@@ -770,6 +766,7 @@ func buildChannelOrderDetailResponse(order *models.Order, locale string) gin.H {
 		"original_amount":    order.OriginalAmount.StringFixed(2),
 		"coupon_discount":    order.DiscountAmount.StringFixed(2),
 		"promotion_discount": order.PromotionDiscountAmount.StringFixed(2),
+		"wholesale_discount": order.WholesaleDiscountAmount.StringFixed(2),
 		"total_amount":       order.TotalAmount.StringFixed(2),
 		"wallet_paid_amount": order.WalletPaidAmount.StringFixed(2),
 		"online_paid_amount": order.OnlinePaidAmount.StringFixed(2),
@@ -801,6 +798,7 @@ func buildChannelOrderDetailResponse(order *models.Order, locale string) gin.H {
 			"subtotal":             item.TotalPrice.StringFixed(2),
 			"coupon_discount":      item.CouponDiscount.StringFixed(2),
 			"promotion_discount":   item.PromotionDiscount.StringFixed(2),
+			"wholesale_discount":   item.WholesaleDiscount.StringFixed(2),
 			"fulfillment_type":     item.FulfillmentType,
 			"instructions":         instructions,
 		})
@@ -902,12 +900,18 @@ func buildChannelPaymentResponse(order *models.Order, payment *models.Payment) g
 		"created_at":       payment.CreatedAt,
 		"updated_at":       payment.UpdatedAt,
 	}
-	if addr, chainAmount := dto.ExtractUSDTWalletInfo(payment.ProviderType, payment.InteractionMode, payment.ProviderPayload); addr != "" || chainAmount != "" {
-		if addr != "" {
-			resp["wallet_address"] = addr
+	if info := dto.ExtractCryptoWalletInfo(payment.ProviderType, payment.InteractionMode, payment.ProviderPayload); info.HasAny() {
+		if info.Address != "" {
+			resp["wallet_address"] = info.Address
 		}
-		if chainAmount != "" {
-			resp["chain_amount"] = chainAmount
+		if info.ChainAmount != "" {
+			resp["chain_amount"] = info.ChainAmount
+		}
+		if info.Chain != "" {
+			resp["chain"] = info.Chain
+		}
+		if info.TokenID != "" {
+			resp["token_id"] = info.TokenID
 		}
 	}
 	if order != nil {

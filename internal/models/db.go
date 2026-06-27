@@ -110,6 +110,15 @@ func AutoMigrate() error {
 		&AffiliateClick{},
 		&AffiliateCommission{},
 		&AffiliateWithdrawRequest{},
+		&ResellerProfile{},
+		&ResellerDomain{},
+		&ResellerSiteConfig{},
+		&ResellerProductSetting{},
+		&ResellerOrderSnapshot{},
+		&ResellerLedgerEntry{},
+		&ResellerWithdrawRequest{},
+		&ResellerBalanceAccount{},
+		&ResellerRelatedAccount{},
 		&WalletAccount{},
 		&WalletTransaction{},
 		&WalletRechargeOrder{},
@@ -173,6 +182,9 @@ func AutoMigrate() error {
 		return err
 	}
 	if err := ensureOrderItemOriginalPriceMigration(); err != nil {
+		return err
+	}
+	if err := ensureResellerIndexes(DB); err != nil {
 		return err
 	}
 

@@ -189,20 +189,6 @@ func (s *PaymentService) ValidateChannel(channel *models.PaymentChannel) error {
 	return nil
 }
 
-func mapPaypalStatus(status string) (string, bool) {
-	status = strings.ToUpper(strings.TrimSpace(status))
-	switch status {
-	case "COMPLETED":
-		return constants.PaymentStatusSuccess, true
-	case "PENDING", "APPROVED", "CREATED", "SAVED":
-		return constants.PaymentStatusPending, true
-	case "DECLINED", "DENIED", "FAILED", "VOIDED":
-		return constants.PaymentStatusFailed, true
-	default:
-		return "", false
-	}
-}
-
 func resolveTokenPayOrderUserKey(order *models.Order) string {
 	if order == nil {
 		return ""

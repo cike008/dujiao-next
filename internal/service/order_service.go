@@ -12,54 +12,67 @@ import (
 	"github.com/dujiao-next/internal/queue"
 	"github.com/dujiao-next/internal/repository"
 
+	"github.com/hibiken/asynq"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 // OrderService 订单服务
 type OrderService struct {
-	orderRepo             repository.OrderRepository
-	orderRefundRecordRepo repository.OrderRefundRecordRepository
-	paymentRepo           repository.PaymentRepository
-	userRepo              repository.UserRepository
-	productRepo           repository.ProductRepository
-	productSKURepo        repository.ProductSKURepository
-	cardSecretRepo        repository.CardSecretRepository
-	couponRepo            repository.CouponRepository
-	couponUsageRepo       repository.CouponUsageRepository
-	promotionRepo         repository.PromotionRepository
-	queueClient           *queue.Client
-	settingService        *SettingService
-	defaultEmailConfig    config.EmailConfig
-	walletService         *WalletService
-	affiliateSvc          *AffiliateService
-	memberLevelService    *MemberLevelService
-	riskControlSvc        *OrderRiskControlService
-	productMappingService *ProductMappingService
-	expireMinutes         int
+	orderRepo               repository.OrderRepository
+	orderRefundRecordRepo   repository.OrderRefundRecordRepository
+	paymentRepo             repository.PaymentRepository
+	userRepo                repository.UserRepository
+	productRepo             repository.ProductRepository
+	productSKURepo          repository.ProductSKURepository
+	cardSecretRepo          repository.CardSecretRepository
+	resellerRepo            repository.ResellerRepository
+	couponRepo              repository.CouponRepository
+	couponUsageRepo         repository.CouponUsageRepository
+	promotionRepo           repository.PromotionRepository
+	queueClient             orderQueueClient
+	settingService          *SettingService
+	defaultEmailConfig      config.EmailConfig
+	walletService           *WalletService
+	affiliateSvc            *AffiliateService
+	memberLevelService      *MemberLevelService
+	resellerPricingResolver *ResellerPricingResolver
+	resellerAccountingSvc   *ResellerAccountingService
+	riskControlSvc          *OrderRiskControlService
+	productMappingService   *ProductMappingService
+	expireMinutes           int
+}
+
+type orderQueueClient interface {
+	Enabled() bool
+	EnqueueOrderTimeoutCancel(payload queue.OrderTimeoutCancelPayload, delay time.Duration) error
+	EnqueueOrderStatusEmail(payload queue.OrderStatusEmailPayload, opts ...asynq.Option) error
 }
 
 // OrderServiceOptions 订单服务构造参数
 type OrderServiceOptions struct {
-	OrderRepo             repository.OrderRepository
-	OrderRefundRecordRepo repository.OrderRefundRecordRepository
-	PaymentRepo           repository.PaymentRepository
-	UserRepo              repository.UserRepository
-	ProductRepo           repository.ProductRepository
-	ProductSKURepo        repository.ProductSKURepository
-	CardSecretRepo        repository.CardSecretRepository
-	CouponRepo            repository.CouponRepository
-	CouponUsageRepo       repository.CouponUsageRepository
-	PromotionRepo         repository.PromotionRepository
-	QueueClient           *queue.Client
-	SettingService        *SettingService
-	DefaultEmailConfig    config.EmailConfig
-	WalletService         *WalletService
-	AffiliateService      *AffiliateService
-	MemberLevelService    *MemberLevelService
-	RiskControlService    *OrderRiskControlService
-	ProductMappingService *ProductMappingService
-	ExpireMinutes         int
+	OrderRepo                 repository.OrderRepository
+	OrderRefundRecordRepo     repository.OrderRefundRecordRepository
+	PaymentRepo               repository.PaymentRepository
+	UserRepo                  repository.UserRepository
+	ProductRepo               repository.ProductRepository
+	ProductSKURepo            repository.ProductSKURepository
+	CardSecretRepo            repository.CardSecretRepository
+	ResellerRepo              repository.ResellerRepository
+	CouponRepo                repository.CouponRepository
+	CouponUsageRepo           repository.CouponUsageRepository
+	PromotionRepo             repository.PromotionRepository
+	QueueClient               *queue.Client
+	SettingService            *SettingService
+	DefaultEmailConfig        config.EmailConfig
+	WalletService             *WalletService
+	AffiliateService          *AffiliateService
+	MemberLevelService        *MemberLevelService
+	ResellerPricingResolver   *ResellerPricingResolver
+	ResellerAccountingService *ResellerAccountingService
+	RiskControlService        *OrderRiskControlService
+	ProductMappingService     *ProductMappingService
+	ExpireMinutes             int
 }
 
 // SetProductMappingService 注入商品映射服务（用于下单前上游库存兜底校验）。
@@ -74,31 +87,35 @@ func (s *OrderService) SetProductMappingService(svc *ProductMappingService) {
 // NewOrderService 创建订单服务
 func NewOrderService(opts OrderServiceOptions) *OrderService {
 	return &OrderService{
-		orderRepo:             opts.OrderRepo,
-		orderRefundRecordRepo: opts.OrderRefundRecordRepo,
-		paymentRepo:           opts.PaymentRepo,
-		userRepo:              opts.UserRepo,
-		productRepo:           opts.ProductRepo,
-		productSKURepo:        opts.ProductSKURepo,
-		cardSecretRepo:        opts.CardSecretRepo,
-		couponRepo:            opts.CouponRepo,
-		couponUsageRepo:       opts.CouponUsageRepo,
-		promotionRepo:         opts.PromotionRepo,
-		queueClient:           opts.QueueClient,
-		settingService:        opts.SettingService,
-		defaultEmailConfig:    opts.DefaultEmailConfig,
-		walletService:         opts.WalletService,
-		affiliateSvc:          opts.AffiliateService,
-		memberLevelService:    opts.MemberLevelService,
-		riskControlSvc:        opts.RiskControlService,
-		productMappingService: opts.ProductMappingService,
-		expireMinutes:         opts.ExpireMinutes,
+		orderRepo:               opts.OrderRepo,
+		orderRefundRecordRepo:   opts.OrderRefundRecordRepo,
+		paymentRepo:             opts.PaymentRepo,
+		userRepo:                opts.UserRepo,
+		productRepo:             opts.ProductRepo,
+		productSKURepo:          opts.ProductSKURepo,
+		cardSecretRepo:          opts.CardSecretRepo,
+		resellerRepo:            opts.ResellerRepo,
+		couponRepo:              opts.CouponRepo,
+		couponUsageRepo:         opts.CouponUsageRepo,
+		promotionRepo:           opts.PromotionRepo,
+		queueClient:             opts.QueueClient,
+		settingService:          opts.SettingService,
+		defaultEmailConfig:      opts.DefaultEmailConfig,
+		walletService:           opts.WalletService,
+		affiliateSvc:            opts.AffiliateService,
+		memberLevelService:      opts.MemberLevelService,
+		resellerPricingResolver: opts.ResellerPricingResolver,
+		resellerAccountingSvc:   opts.ResellerAccountingService,
+		riskControlSvc:          opts.RiskControlService,
+		productMappingService:   opts.ProductMappingService,
+		expireMinutes:           opts.ExpireMinutes,
 	}
 }
 
 // CreateOrderInput 创建订单输入
 type CreateOrderInput struct {
 	UserID              uint
+	Tenant              TenantContext
 	Items               []CreateOrderItem
 	CouponCode          string
 	AffiliateCode       string
@@ -114,6 +131,7 @@ type CreateGuestOrderInput struct {
 	Email               string
 	OrderPassword       string
 	Locale              string
+	Tenant              TenantContext
 	Items               []CreateOrderItem
 	CouponCode          string
 	AffiliateCode       string
@@ -138,6 +156,7 @@ type childOrderPlan struct {
 	TotalAmount       decimal.Decimal
 	MemberDiscount    decimal.Decimal
 	PromotionDiscount decimal.Decimal
+	WholesaleDiscount decimal.Decimal
 	CouponDiscount    decimal.Decimal
 	Currency          string
 }
@@ -187,6 +206,7 @@ func (s *OrderService) CreateOrder(input CreateOrderInput) (*models.Order, error
 	}
 	return s.createOrder(orderCreateParams{
 		UserID:              input.UserID,
+		Tenant:              input.Tenant,
 		Items:               input.Items,
 		CouponCode:          input.CouponCode,
 		AffiliateCode:       input.AffiliateCode,
@@ -214,6 +234,7 @@ func (s *OrderService) CreateGuestOrder(input CreateGuestOrderInput) (*models.Or
 		GuestEmail:          email,
 		GuestPassword:       password,
 		GuestLocale:         locale,
+		Tenant:              input.Tenant,
 		Items:               input.Items,
 		CouponCode:          input.CouponCode,
 		AffiliateCode:       input.AffiliateCode,
@@ -229,6 +250,7 @@ type orderCreateParams struct {
 	GuestEmail          string
 	GuestPassword       string
 	GuestLocale         string
+	Tenant              TenantContext
 	Items               []CreateOrderItem
 	CouponCode          string
 	AffiliateCode       string
@@ -248,6 +270,7 @@ type OrderPreview struct {
 	MemberDiscountAmount    models.Money       `json:"member_discount_amount"`
 	DiscountAmount          models.Money       `json:"discount_amount"`
 	PromotionDiscountAmount models.Money       `json:"promotion_discount_amount"`
+	WholesaleDiscountAmount models.Money       `json:"wholesale_discount_amount"`
 	TotalAmount             models.Money       `json:"total_amount"`
 	Items                   []OrderPreviewItem `json:"items"`
 }
@@ -267,6 +290,7 @@ type OrderPreviewItem struct {
 	MemberDiscount     models.Money       `json:"member_discount_amount"`
 	CouponDiscount     models.Money       `json:"coupon_discount_amount"`
 	PromotionDiscount  models.Money       `json:"promotion_discount_amount"`
+	WholesaleDiscount  models.Money       `json:"wholesale_discount_amount"`
 	FulfillmentType    string             `json:"fulfillment_type"`
 }
 
@@ -276,6 +300,7 @@ type orderBuildResult struct {
 	OriginalAmount          decimal.Decimal
 	MemberDiscountAmount    decimal.Decimal
 	PromotionDiscountAmount decimal.Decimal
+	WholesaleDiscountAmount decimal.Decimal
 	DiscountAmount          decimal.Decimal
 	TotalAmount             decimal.Decimal
 	Currency                string
@@ -291,6 +316,7 @@ func (s *OrderService) PreviewOrder(input CreateOrderInput) (*OrderPreview, erro
 	}
 	return s.previewOrder(orderCreateParams{
 		UserID:              input.UserID,
+		Tenant:              input.Tenant,
 		Items:               input.Items,
 		CouponCode:          input.CouponCode,
 		AffiliateCode:       input.AffiliateCode,
@@ -307,6 +333,7 @@ func (s *OrderService) PreviewGuestOrder(input CreateGuestOrderInput) (*OrderPre
 		GuestEmail:          input.Email,
 		GuestPassword:       input.OrderPassword,
 		GuestLocale:         input.Locale,
+		Tenant:              input.Tenant,
 		Items:               input.Items,
 		CouponCode:          input.CouponCode,
 		AffiliateCode:       input.AffiliateCode,
@@ -322,6 +349,13 @@ func (s *OrderService) previewOrder(input orderCreateParams) (*OrderPreview, err
 	result, err := s.buildOrderResult(input)
 	if err != nil {
 		return nil, err
+	}
+	if s.resellerPricingResolver != nil {
+		if _, err := s.resellerPricingResolver.ApplyToOrderBuildResult(input.Tenant, input.UserID, result); err != nil {
+			return nil, err
+		}
+	} else if isResellerOrderContext(input.Tenant) {
+		return nil, ErrResellerProductNotListed
 	}
 	items := make([]OrderPreviewItem, 0, len(result.Plans))
 	for _, plan := range result.Plans {
@@ -340,6 +374,7 @@ func (s *OrderService) previewOrder(input orderCreateParams) (*OrderPreview, err
 			MemberDiscount:     item.MemberDiscount,
 			CouponDiscount:     item.CouponDiscount,
 			PromotionDiscount:  item.PromotionDiscount,
+			WholesaleDiscount:  item.WholesaleDiscount,
 			FulfillmentType:    item.FulfillmentType,
 		})
 	}
@@ -349,6 +384,7 @@ func (s *OrderService) previewOrder(input orderCreateParams) (*OrderPreview, err
 		MemberDiscountAmount:    models.NewMoneyFromDecimal(result.MemberDiscountAmount),
 		DiscountAmount:          models.NewMoneyFromDecimal(result.DiscountAmount),
 		PromotionDiscountAmount: models.NewMoneyFromDecimal(result.PromotionDiscountAmount),
+		WholesaleDiscountAmount: models.NewMoneyFromDecimal(result.WholesaleDiscountAmount),
 		TotalAmount:             models.NewMoneyFromDecimal(result.TotalAmount),
 		Items:                   items,
 	}, nil
@@ -376,6 +412,15 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 	if err != nil {
 		return nil, err
 	}
+	var pricingCtx *ResellerOrderPricingContext
+	if s.resellerPricingResolver != nil {
+		pricingCtx, err = s.resellerPricingResolver.ApplyToOrderBuildResult(input.Tenant, input.UserID, result)
+		if err != nil {
+			return nil, err
+		}
+	} else if isResellerOrderContext(input.Tenant) {
+		return nil, ErrResellerProductNotListed
+	}
 
 	// 仅允许钱包余额支付时，在创建订单（锁库存）前预校验余额是否充足
 	if s.settingService != nil && s.settingService.GetWalletOnlyPayment() {
@@ -398,7 +443,10 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 	affiliateCode := normalizeAffiliateCode(input.AffiliateCode)
 	affiliateVisitorKey := strings.TrimSpace(input.AffiliateVisitorKey)
 	var affiliateProfileID *uint
-	if s.affiliateSvc != nil {
+	if pricingCtx != nil {
+		affiliateCode = ""
+		affiliateVisitorKey = ""
+	} else if s.affiliateSvc != nil {
 		resolvedID, resolvedCode, resolveErr := s.affiliateSvc.ResolveOrderAffiliateSnapshot(input.UserID, affiliateCode, affiliateVisitorKey)
 		if resolveErr != nil {
 			return nil, resolveErr
@@ -435,6 +483,7 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 		MemberDiscountAmount:    models.NewMoneyFromDecimal(result.MemberDiscountAmount),
 		DiscountAmount:          models.NewMoneyFromDecimal(result.DiscountAmount),
 		PromotionDiscountAmount: models.NewMoneyFromDecimal(result.PromotionDiscountAmount),
+		WholesaleDiscountAmount: models.NewMoneyFromDecimal(result.WholesaleDiscountAmount),
 		TotalAmount:             models.NewMoneyFromDecimal(result.TotalAmount),
 		WalletPaidAmount:        models.NewMoneyFromDecimal(decimal.Zero),
 		OnlinePaidAmount:        models.NewMoneyFromDecimal(result.TotalAmount),
@@ -448,6 +497,12 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 		ClientIP:                strings.TrimSpace(input.ClientIP),
 		CreatedAt:               now,
 		UpdatedAt:               now,
+	}
+	if pricingCtx != nil {
+		resellerID := pricingCtx.ResellerID
+		order.ResellerID = &resellerID
+		order.ResellerDomain = pricingCtx.Domain
+		order.ResellerProfitAmount = models.NewMoneyFromDecimal(pricingCtx.EffectiveProfit)
 	}
 
 	if result.AppliedCoupon != nil {
@@ -466,6 +521,10 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 
 		for idx := range result.Plans {
 			plan := result.Plans[idx]
+			childProfit := decimal.Zero
+			if pricingCtx != nil && idx < len(pricingCtx.Items) && pricingCtx.ProfitEligible {
+				childProfit = pricingCtx.Items[idx].ProfitAmount
+			}
 			childOrder := &models.Order{
 				OrderNo:                 buildChildOrderNo(order.OrderNo, idx+1),
 				ParentID:                &order.ID,
@@ -479,6 +538,7 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 				MemberDiscountAmount:    models.NewMoneyFromDecimal(plan.MemberDiscount),
 				DiscountAmount:          models.NewMoneyFromDecimal(plan.CouponDiscount),
 				PromotionDiscountAmount: models.NewMoneyFromDecimal(plan.PromotionDiscount),
+				WholesaleDiscountAmount: models.NewMoneyFromDecimal(plan.WholesaleDiscount),
 				TotalAmount:             models.NewMoneyFromDecimal(normalizeOrderAmount(plan.TotalAmount.Sub(plan.CouponDiscount))),
 				WalletPaidAmount:        models.NewMoneyFromDecimal(decimal.Zero),
 				OnlinePaidAmount:        models.NewMoneyFromDecimal(normalizeOrderAmount(plan.TotalAmount.Sub(plan.CouponDiscount))),
@@ -492,11 +552,25 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 				CreatedAt:               now,
 				UpdatedAt:               now,
 			}
+			if pricingCtx != nil {
+				resellerID := pricingCtx.ResellerID
+				childOrder.ResellerID = &resellerID
+				childOrder.ResellerDomain = pricingCtx.Domain
+				childOrder.ResellerProfitAmount = models.NewMoneyFromDecimal(childProfit)
+			}
 			if result.AppliedCoupon != nil && plan.CouponDiscount.GreaterThan(decimal.Zero) {
 				childOrder.CouponID = &result.AppliedCoupon.ID
 			}
-			if err := orderRepo.Create(childOrder, []models.OrderItem{plan.Item}); err != nil {
+			items := []models.OrderItem{plan.Item}
+			if err := orderRepo.Create(childOrder, items); err != nil {
 				return err
+			}
+			if len(items) > 0 {
+				result.Plans[idx].Item = items[0]
+				plan.Item = items[0]
+				if pricingCtx != nil {
+					pricingCtx.BindCreatedOrderItem(idx, childOrder.ID, items[0].ID)
+				}
 			}
 
 			if strings.TrimSpace(plan.Item.FulfillmentType) == constants.FulfillmentTypeAuto {
@@ -550,6 +624,15 @@ func (s *OrderService) createOrder(input orderCreateParams) (*models.Order, erro
 				return err
 			}
 			if err := couponRepo.IncrementUsedCount(result.AppliedCoupon.ID, 1); err != nil {
+				return err
+			}
+		}
+		if pricingCtx != nil {
+			if s.resellerRepo == nil {
+				return ErrOrderCreateFailed
+			}
+			resellerRepo := s.resellerRepo.WithTx(tx)
+			if err := resellerRepo.CreateOrderSnapshot(pricingCtx.BuildSnapshot(order.ID, now)); err != nil {
 				return err
 			}
 		}

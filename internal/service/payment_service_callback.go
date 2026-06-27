@@ -83,7 +83,7 @@ func (s *PaymentService) HandleCallback(input PaymentCallbackInput) (*models.Pay
 		)
 		return nil, ErrPaymentInvalid
 	}
-	if input.Currency != "" && strings.ToUpper(strings.TrimSpace(input.Currency)) != strings.ToUpper(strings.TrimSpace(payment.Currency)) {
+	if input.Currency != "" && !strings.EqualFold(strings.TrimSpace(input.Currency), strings.TrimSpace(payment.Currency)) {
 		log.Warnw("payment_callback_currency_mismatch",
 			"stored_currency", payment.Currency,
 			"callback_currency", input.Currency,
@@ -176,7 +176,7 @@ func (s *PaymentService) handleWalletRechargeCallback(payment *models.Payment, s
 		)
 		return nil, ErrPaymentInvalid
 	}
-	if input.Currency != "" && strings.ToUpper(strings.TrimSpace(input.Currency)) != strings.ToUpper(strings.TrimSpace(payment.Currency)) {
+	if input.Currency != "" && !strings.EqualFold(strings.TrimSpace(input.Currency), strings.TrimSpace(payment.Currency)) {
 		log.Warnw("wallet_recharge_callback_currency_mismatch",
 			"stored_currency", payment.Currency,
 			"callback_currency", input.Currency,
@@ -402,6 +402,11 @@ func (s *PaymentService) applyPaymentUpdate(payment *models.Payment, order *mode
 		if status == constants.PaymentStatusSuccess && order.Status != constants.OrderStatusPaid {
 			if err := s.markOrderPaid(tx, order, now); err != nil {
 				return err
+			}
+			if s.resellerAccountingSvc != nil {
+				if err := s.resellerAccountingSvc.PostOrderProfitTx(tx, order, payment); err != nil {
+					return err
+				}
 			}
 			orderPaid = true
 		}

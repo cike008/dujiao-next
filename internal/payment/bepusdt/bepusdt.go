@@ -378,23 +378,6 @@ func ResolveTradeType(channelType string) string {
 	}
 }
 
-// IsSupportedTradeType 判断是否支持的交易类型
-func IsSupportedTradeType(tradeType string) bool {
-	supported := []string{
-		bepusdtTradeTypeUSDTTRC20, bepusdtTradeTypeUSDTERC20, bepusdtTradeTypeUSDTBEP20, bepusdtTradeTypeUSDTPOLY,
-		bepusdtTradeTypeTRX, bepusdtTradeTypeETH, bepusdtTradeTypeBNB,
-		bepusdtTradeTypeUSDCTRC20, bepusdtTradeTypeUSDCERC20, bepusdtTradeTypeUSDCPOLY, bepusdtTradeTypeUSDCBEP20,
-	}
-	t := strings.ToLower(strings.TrimSpace(tradeType))
-	for _, s := range supported {
-		if s == t {
-			return true
-		}
-	}
-	// 允许任意 trade_type，由 BEpusdt 服务端校验
-	return true
-}
-
 // ToPaymentStatus 将 BEpusdt 状态转换为支付状态
 func ToPaymentStatus(status int) string {
 	switch status {

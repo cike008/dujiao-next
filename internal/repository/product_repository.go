@@ -73,6 +73,9 @@ func (r *GormProductRepository) List(filter ProductListFilter) ([]models.Product
 	} else if filter.CategoryID != "" {
 		query = query.Where("category_id = ?", filter.CategoryID)
 	}
+	if len(filter.ExcludeProductIDs) > 0 {
+		query = query.Where("products.id NOT IN ?", filter.ExcludeProductIDs)
+	}
 	if fulfillmentType := strings.TrimSpace(filter.FulfillmentType); fulfillmentType != "" {
 		query = query.Where("fulfillment_type = ?", fulfillmentType)
 	}
@@ -99,6 +102,14 @@ func (r *GormProductRepository) List(filter ProductListFilter) ([]models.Product
 
 	stockStatus := strings.ToLower(strings.TrimSpace(filter.StockStatus))
 	query = applyStockStatusFilter(query, stockStatus, filter.LowStockThreshold)
+	if filter.HasWholesalePrices != nil {
+		expr := jsonArrayLengthExpr(r.db, "wholesale_prices")
+		if *filter.HasWholesalePrices {
+			query = query.Where(expr + " > 0")
+		} else {
+			query = query.Where(expr + " = 0")
+		}
+	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

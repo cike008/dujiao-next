@@ -21,6 +21,8 @@ type CreatePaymentResp struct {
 	QRCode           string       `json:"qr_code,omitempty"`
 	WalletAddress    string       `json:"wallet_address,omitempty"`
 	ChainAmount      string       `json:"chain_amount,omitempty"`
+	Chain            string       `json:"chain,omitempty"`
+	TokenID          string       `json:"token_id,omitempty"`
 	ExpiresAt        *time.Time   `json:"expires_at,omitempty"`
 	ChannelName      string       `json:"channel_name,omitempty"`
 }
@@ -41,11 +43,15 @@ func NewCreatePaymentResp(result *service.CreatePaymentResult) CreatePaymentResp
 		resp.PayURL = result.Payment.PayURL
 		resp.QRCode = result.Payment.QRCode
 		resp.ExpiresAt = result.Payment.ExpiredAt
-		resp.WalletAddress, resp.ChainAmount = ExtractUSDTWalletInfo(
+		info := ExtractCryptoWalletInfo(
 			result.Payment.ProviderType,
 			result.Payment.InteractionMode,
 			result.Payment.ProviderPayload,
 		)
+		resp.WalletAddress = info.Address
+		resp.ChainAmount = info.ChainAmount
+		resp.Chain = info.Chain
+		resp.TokenID = info.TokenID
 	}
 	if result.Channel != nil {
 		resp.ChannelName = result.Channel.Name
@@ -66,12 +72,14 @@ type LatestPaymentResp struct {
 	QRCode          string     `json:"qr_code"`
 	WalletAddress   string     `json:"wallet_address,omitempty"`
 	ChainAmount     string     `json:"chain_amount,omitempty"`
+	Chain           string     `json:"chain,omitempty"`
+	TokenID         string     `json:"token_id,omitempty"`
 	ExpiresAt       *time.Time `json:"expires_at"`
 }
 
 // NewLatestPaymentResp 从 Payment + Order 构造响应
 func NewLatestPaymentResp(payment *models.Payment, orderNo string) LatestPaymentResp {
-	addr, amt := ExtractUSDTWalletInfo(payment.ProviderType, payment.InteractionMode, payment.ProviderPayload)
+	info := ExtractCryptoWalletInfo(payment.ProviderType, payment.InteractionMode, payment.ProviderPayload)
 	return LatestPaymentResp{
 		PaymentID:       payment.ID,
 		OrderNo:         orderNo,
@@ -82,8 +90,10 @@ func NewLatestPaymentResp(payment *models.Payment, orderNo string) LatestPayment
 		InteractionMode: payment.InteractionMode,
 		PayURL:          payment.PayURL,
 		QRCode:          payment.QRCode,
-		WalletAddress:   addr,
-		ChainAmount:     amt,
+		WalletAddress:   info.Address,
+		ChainAmount:     info.ChainAmount,
+		Chain:           info.Chain,
+		TokenID:         info.TokenID,
 		ExpiresAt:       payment.ExpiredAt,
 	}
 	// 排除：OrderID、Amount、FeeRate、FixedFee、FeeAmount、Currency、Status、

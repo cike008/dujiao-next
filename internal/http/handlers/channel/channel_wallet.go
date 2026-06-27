@@ -2,11 +2,11 @@ package channel
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 
 	"github.com/dujiao-next/internal/constants"
 	"github.com/dujiao-next/internal/dto"
+	"github.com/dujiao-next/internal/http/handlers/shared"
 	"github.com/dujiao-next/internal/logger"
 	"github.com/dujiao-next/internal/models"
 	"github.com/dujiao-next/internal/repository"
@@ -59,14 +59,7 @@ func (h *Handler) GetWalletTransactions(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "5"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 20 {
-		pageSize = 5
-	}
+	page, pageSize := shared.ParsePaginationWithBounds(c, "page", "page_size", 5, 20)
 
 	userID, err := h.provisionTelegramChannelUserID(service.TelegramChannelIdentityInput{ChannelUserID: channelUserID})
 	if err != nil {
@@ -223,12 +216,18 @@ func (h *Handler) CreateWalletRecharge(c *gin.Context) {
 		"qr_code":          result.Payment.QRCode,
 		"expires_at":       result.Payment.ExpiredAt,
 	}
-	if addr, chainAmount := dto.ExtractUSDTWalletInfo(result.Payment.ProviderType, result.Payment.InteractionMode, result.Payment.ProviderPayload); addr != "" || chainAmount != "" {
-		if addr != "" {
-			paymentBlock["wallet_address"] = addr
+	if info := dto.ExtractCryptoWalletInfo(result.Payment.ProviderType, result.Payment.InteractionMode, result.Payment.ProviderPayload); info.HasAny() {
+		if info.Address != "" {
+			paymentBlock["wallet_address"] = info.Address
 		}
-		if chainAmount != "" {
-			paymentBlock["chain_amount"] = chainAmount
+		if info.ChainAmount != "" {
+			paymentBlock["chain_amount"] = info.ChainAmount
+		}
+		if info.Chain != "" {
+			paymentBlock["chain"] = info.Chain
+		}
+		if info.TokenID != "" {
+			paymentBlock["token_id"] = info.TokenID
 		}
 	}
 

@@ -51,7 +51,6 @@ func (h *Handler) PaymentCallback(c *gin.Context) {
 		"message":     "支付回调请求无法匹配已支持的回调格式",
 	})
 	c.AbortWithStatus(http.StatusNotFound)
-	return
 }
 
 func parseCallbackForm(c *gin.Context) (map[string][]string, error) {

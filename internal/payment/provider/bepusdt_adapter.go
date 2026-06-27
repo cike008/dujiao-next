@@ -75,12 +75,18 @@ func (a *bepusdtAdapter) CreatePayment(ctx context.Context, raw models.JSON, inp
 		return nil, err
 	}
 
+	returnURL := strings.TrimSpace(input.ReturnURL)
+	if returnURL == "" {
+		returnURL = strings.TrimSpace(cfg.ReturnURL)
+	}
+	returnURL = appendQueryParams(returnURL, input.ReturnURLQuery)
+
 	native := bepusdt.CreateInput{
 		OrderNo:   input.OrderNo,
 		Amount:    input.Amount.Decimal.String(),
 		Name:      input.Subject,
 		NotifyURL: input.NotifyURL,
-		ReturnURL: input.ReturnURL,
+		ReturnURL: returnURL,
 	}
 	result, err := bepusdt.CreatePayment(ctx, cfg, native)
 	if err != nil {

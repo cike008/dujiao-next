@@ -31,6 +31,7 @@ type Config struct {
 	Order         OrderConfig         `mapstructure:"order"`
 	Captcha       CaptchaConfig       `mapstructure:"captcha"`
 	Web           WebConfig           `mapstructure:"web"`
+	Reseller      ResellerConfig      `mapstructure:"reseller"`
 }
 
 // AppConfig 应用级配置
@@ -282,6 +283,17 @@ type WebConfig struct {
 	AdminPath string `mapstructure:"admin_path"`
 }
 
+// ResellerConfig 分销商模式配置。
+type ResellerConfig struct {
+	Enabled              bool     `mapstructure:"enabled"`
+	MainHosts            []string `mapstructure:"main_hosts"`
+	TrustedForwardedHost bool     `mapstructure:"trusted_forwarded_host"`
+	SubdomainBase        string   `mapstructure:"subdomain_base"`
+	SelfApplyEnabled     bool     `mapstructure:"self_apply_enabled"`
+	// SettlementConfirmDays 分销利润入账后转为可提现的确认天数（0 表示即时到账）。
+	SettlementConfirmDays int `mapstructure:"settlement_confirm_days"`
+}
+
 // Load 从 config.yml 加载配置
 func Load() *Config {
 	viper.SetConfigName("config")
@@ -406,6 +418,12 @@ func Load() *Config {
 	viper.SetDefault("captcha.turnstile.verify_url", "https://challenges.cloudflare.com/turnstile/v0/siteverify")
 	viper.SetDefault("captcha.turnstile.timeout_ms", 2000)
 	viper.SetDefault("web.admin_path", "/admin")
+	viper.SetDefault("reseller.enabled", false)
+	viper.SetDefault("reseller.main_hosts", []string{"localhost", "127.0.0.1", "::1"})
+	viper.SetDefault("reseller.trusted_forwarded_host", false)
+	viper.SetDefault("reseller.subdomain_base", "")
+	viper.SetDefault("reseller.self_apply_enabled", true)
+	viper.SetDefault("reseller.settlement_confirm_days", 7)
 
 	// 环境变量支持
 	viper.AutomaticEnv()                                   // 自动读取环境变量

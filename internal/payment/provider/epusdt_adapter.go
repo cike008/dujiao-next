@@ -58,12 +58,18 @@ func (a *epusdtAdapter) CreatePayment(ctx context.Context, raw models.JSON, inpu
 		return nil, err
 	}
 
+	returnURL := strings.TrimSpace(input.ReturnURL)
+	if returnURL == "" {
+		returnURL = strings.TrimSpace(cfg.ReturnURL)
+	}
+	returnURL = appendQueryParams(returnURL, input.ReturnURLQuery)
+
 	native := epusdt.CreateInput{
 		OrderNo:   input.OrderNo,
 		Amount:    input.Amount.Decimal.String(),
 		Name:      input.Subject,
 		NotifyURL: input.NotifyURL,
-		ReturnURL: input.ReturnURL,
+		ReturnURL: returnURL,
 	}
 	result, err := epusdt.CreatePayment(ctx, cfg, native)
 	if err != nil {

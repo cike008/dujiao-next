@@ -42,6 +42,6 @@ func (h *Handler) UpdateContactItems(c *gin.Context) {
 		shared.RespondError(c, response.CodeInternal, "error.settings_save_failed", err)
 		return
 	}
-	_ = cache.Del(c.Request.Context(), publicConfigCacheKey)
+	_ = cache.DelAllPublicConfig(c.Request.Context())
 	response.Success(c, gin.H{"items": updated})
 }

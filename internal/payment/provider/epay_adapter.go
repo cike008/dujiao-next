@@ -169,6 +169,9 @@ func (a *epayAdapter) VerifyCallback(raw models.JSON, form map[string][]string, 
 	if err := epay.VerifyCallback(cfg, form); err != nil {
 		return nil, mapEpayError(err)
 	}
+	if err := epay.VerifyCallbackOwnership(cfg, form); err != nil {
+		return nil, mapEpayError(err)
+	}
 
 	orderNo := pickFormValue(form, "out_trade_no")
 	providerRef := pickFormValue(form, "trade_no")

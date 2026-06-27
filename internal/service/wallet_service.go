@@ -19,12 +19,13 @@ const (
 
 // WalletService 钱包服务
 type WalletService struct {
-	walletRepo       repository.WalletRepository
-	orderRepo        repository.OrderRepository
-	refundRecordRepo repository.OrderRefundRecordRepository
-	userRepo         repository.UserRepository
-	affiliateSvc     *AffiliateService
-	settingService   *SettingService
+	walletRepo            repository.WalletRepository
+	orderRepo             repository.OrderRepository
+	refundRecordRepo      repository.OrderRefundRecordRepository
+	userRepo              repository.UserRepository
+	affiliateSvc          *AffiliateService
+	settingService        *SettingService
+	resellerAccountingSvc *ResellerAccountingService
 }
 
 // WalletRechargeInput 用户充值输入
@@ -80,6 +81,10 @@ func NewWalletService(
 	}
 }
 
+func (s *WalletService) SetResellerAccountingService(svc *ResellerAccountingService) {
+	s.resellerAccountingSvc = svc
+}
+
 // GetAccount 获取钱包账户（不存在时自动创建）
 func (s *WalletService) GetAccount(userID uint) (*models.WalletAccount, error) {
 	if userID == 0 {
@@ -108,6 +113,17 @@ func (s *WalletService) ListUserRechargeOrders(userID uint, page, pageSize int, 
 		PageSize:   pageSize,
 		UserID:     userID,
 		Status:     status,
+		RechargeNo: rechargeNo,
+	})
+}
+
+// StatsUserRechargeOrders 按状态聚合当前用户充值单数量（基于全量数据，仅复用关键词筛选）
+func (s *WalletService) StatsUserRechargeOrders(userID uint, rechargeNo string) (map[string]int64, error) {
+	if userID == 0 {
+		return nil, ErrWalletAccountNotFound
+	}
+	return s.walletRepo.StatsRechargeOrders(repository.WalletRechargeListFilter{
+		UserID:     userID,
 		RechargeNo: rechargeNo,
 	})
 }
@@ -324,6 +340,11 @@ func (s *WalletService) AdminRefundToWallet(input AdminRefundToWalletInput) (*mo
 		}
 		if err := s.refundRecordRepo.WithTx(tx).Create(record); err != nil {
 			return ErrRefundRecordCreateFailed
+		}
+		if s.resellerAccountingSvc != nil {
+			if err := s.resellerAccountingSvc.HandleRefundDeductTx(tx, &order, record, refundedBefore); err != nil {
+				return err
+			}
 		}
 		txnResult = txn
 		refundRecordResult = record

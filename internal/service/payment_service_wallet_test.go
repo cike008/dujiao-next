@@ -59,6 +59,7 @@ func setupPaymentServiceWalletTest(t *testing.T) (*PaymentService, *gorm.DB) {
 	reg.Register(constants.PaymentProviderEpay, "", provider.NewEpayAdapter())
 	reg.Register(constants.PaymentProviderEpusdt, "", provider.NewEpusdtAdapter())
 	reg.Register(constants.PaymentProviderBepusdt, "", provider.NewBepusdtAdapter())
+	reg.Register(constants.PaymentProviderDujiaoPay, "", provider.NewDujiaoPayAdapter())
 	reg.Register(constants.PaymentProviderTokenpay, "", provider.NewTokenpayAdapter())
 	reg.Register(constants.PaymentProviderOkpay, "", provider.NewOkpayAdapter())
 

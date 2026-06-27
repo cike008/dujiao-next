@@ -246,6 +246,8 @@ func TestBuildChannelPaymentResponse_ProviderModeMatrix(t *testing.T) {
 	type wantUSDT struct {
 		address string
 		amount  string
+		chain   string
+		tokenID string
 	}
 	tests := []struct {
 		name            string
@@ -288,6 +290,19 @@ func TestBuildChannelPaymentResponse_ProviderModeMatrix(t *testing.T) {
 			wantUSDT:        &wantUSDT{address: "", amount: "5.00"},
 		},
 		{name: "epusdt redirect", providerType: constants.PaymentProviderEpusdt, channelType: "", interactionMode: constants.PaymentInteractionRedirect},
+		{
+			name:            "dujiaopay qr with wallet payload",
+			providerType:    constants.PaymentProviderDujiaoPay,
+			channelType:     "tron-usdt",
+			interactionMode: constants.PaymentInteractionQR,
+			payload: models.JSON{
+				"chain":          "tron",
+				"token_id":       "tron-usdt",
+				"pay_address":    "TDujiaoAddr",
+				"payable_amount": "10.0001",
+			},
+			wantUSDT: &wantUSDT{address: "TDujiaoAddr", amount: "10.0001", chain: "tron", tokenID: "tron-usdt"},
+		},
 		{name: "okpay qr", providerType: constants.PaymentProviderOkpay, channelType: "", interactionMode: constants.PaymentInteractionQR},
 		{name: "okpay redirect", providerType: constants.PaymentProviderOkpay, channelType: "", interactionMode: constants.PaymentInteractionRedirect},
 		{name: "stripe redirect", providerType: constants.PaymentProviderOfficial, channelType: constants.PaymentChannelTypeStripe, interactionMode: constants.PaymentInteractionRedirect},
@@ -334,6 +349,12 @@ func TestBuildChannelPaymentResponse_ProviderModeMatrix(t *testing.T) {
 				if _, ok := resp["chain_amount"]; ok {
 					t.Errorf("chain_amount should be absent, got %v", resp["chain_amount"])
 				}
+				if _, ok := resp["chain"]; ok {
+					t.Errorf("chain should be absent, got %v", resp["chain"])
+				}
+				if _, ok := resp["token_id"]; ok {
+					t.Errorf("token_id should be absent, got %v", resp["token_id"])
+				}
 				return
 			}
 			if tc.wantUSDT.address == "" {
@@ -349,6 +370,20 @@ func TestBuildChannelPaymentResponse_ProviderModeMatrix(t *testing.T) {
 				}
 			} else if got := resp["chain_amount"]; got != tc.wantUSDT.amount {
 				t.Errorf("chain_amount: got %v want %v", got, tc.wantUSDT.amount)
+			}
+			if tc.wantUSDT.chain == "" {
+				if _, ok := resp["chain"]; ok {
+					t.Errorf("chain should be absent, got %v", resp["chain"])
+				}
+			} else if got := resp["chain"]; got != tc.wantUSDT.chain {
+				t.Errorf("chain: got %v want %v", got, tc.wantUSDT.chain)
+			}
+			if tc.wantUSDT.tokenID == "" {
+				if _, ok := resp["token_id"]; ok {
+					t.Errorf("token_id should be absent, got %v", resp["token_id"])
+				}
+			} else if got := resp["token_id"]; got != tc.wantUSDT.tokenID {
+				t.Errorf("token_id: got %v want %v", got, tc.wantUSDT.tokenID)
 			}
 		})
 	}

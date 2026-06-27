@@ -40,6 +40,7 @@ type PaymentService struct {
 	downstreamCallbackSvc   *DownstreamCallbackService
 	memberLevelSvc          *MemberLevelService
 	paymentProviderRegistry *provider.Registry
+	resellerAccountingSvc   *ResellerAccountingService
 }
 
 // SetProcurementService 设置采购单服务（解决循环依赖）
@@ -59,22 +60,23 @@ func (s *PaymentService) SetMemberLevelService(svc *MemberLevelService) {
 
 // PaymentServiceOptions 支付服务构造参数
 type PaymentServiceOptions struct {
-	OrderRepo               repository.OrderRepository
-	ProductRepo             repository.ProductRepository
-	ProductSKURepo          repository.ProductSKURepository
-	PaymentRepo             repository.PaymentRepository
-	ChannelRepo             repository.PaymentChannelRepository
-	WalletRepo              repository.WalletRepository
-	UserRepo                repository.UserRepository
-	UserOAuthIdentityRepo   repository.UserOAuthIdentityRepository
-	QueueClient             *queue.Client
-	WalletService           *WalletService
-	SettingService          *SettingService
-	DefaultEmailConfig      config.EmailConfig
-	ExpireMinutes           int
-	AffiliateService        *AffiliateService
-	NotificationService     *NotificationService
-	PaymentProviderRegistry *provider.Registry
+	OrderRepo                 repository.OrderRepository
+	ProductRepo               repository.ProductRepository
+	ProductSKURepo            repository.ProductSKURepository
+	PaymentRepo               repository.PaymentRepository
+	ChannelRepo               repository.PaymentChannelRepository
+	WalletRepo                repository.WalletRepository
+	UserRepo                  repository.UserRepository
+	UserOAuthIdentityRepo     repository.UserOAuthIdentityRepository
+	QueueClient               *queue.Client
+	WalletService             *WalletService
+	SettingService            *SettingService
+	DefaultEmailConfig        config.EmailConfig
+	ExpireMinutes             int
+	AffiliateService          *AffiliateService
+	NotificationService       *NotificationService
+	PaymentProviderRegistry   *provider.Registry
+	ResellerAccountingService *ResellerAccountingService
 }
 
 // NewPaymentService 创建支付服务
@@ -96,6 +98,7 @@ func NewPaymentService(opts PaymentServiceOptions) *PaymentService {
 		affiliateSvc:            opts.AffiliateService,
 		notificationSvc:         opts.NotificationService,
 		paymentProviderRegistry: opts.PaymentProviderRegistry,
+		resellerAccountingSvc:   opts.ResellerAccountingService,
 	}
 }
 

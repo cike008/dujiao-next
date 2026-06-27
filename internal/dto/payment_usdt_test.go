@@ -96,3 +96,40 @@ func TestExtractUSDTWalletInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractCryptoWalletInfo_DujiaoPayQR(t *testing.T) {
+	info := ExtractCryptoWalletInfo(constants.PaymentProviderDujiaoPay, constants.PaymentInteractionQR, models.JSON{
+		"chain":          "tron",
+		"token_id":       "tron-usdt",
+		"pay_address":    "TAddr",
+		"payable_amount": "10.0001",
+	})
+
+	if info.Address != "TAddr" {
+		t.Fatalf("Address = %q", info.Address)
+	}
+	if info.ChainAmount != "10.0001" {
+		t.Fatalf("ChainAmount = %q", info.ChainAmount)
+	}
+	if info.Chain != "tron" {
+		t.Fatalf("Chain = %q", info.Chain)
+	}
+	if info.TokenID != "tron-usdt" {
+		t.Fatalf("TokenID = %q", info.TokenID)
+	}
+}
+
+func TestExtractCryptoWalletInfo_DujiaoPayWrappedPayload(t *testing.T) {
+	info := ExtractCryptoWalletInfo(constants.PaymentProviderDujiaoPay, constants.PaymentInteractionQR, models.JSON{
+		"data": map[string]any{
+			"chain":          "base",
+			"token_id":       "base-usdc",
+			"pay_address":    "0xAddr",
+			"payable_amount": "8.50",
+		},
+	})
+
+	if info.Address != "0xAddr" || info.ChainAmount != "8.50" || info.Chain != "base" || info.TokenID != "base-usdc" {
+		t.Fatalf("unexpected info: %+v", info)
+	}
+}

@@ -2,9 +2,14 @@ package provider
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/dujiao-next/internal/constants"
@@ -109,6 +114,34 @@ func TestEpayAdapter_CreatePayment_ExchangeRate_AuditFields(t *testing.T) {
 	}
 }
 
+func TestEpayAdapter_VerifyCallbackRejectsMerchantMismatch(t *testing.T) {
+	a := NewEpayAdapter()
+	raw := models.JSON{
+		"gateway_url":  "https://epay.example.com",
+		"epay_version": "v1",
+		"merchant_id":  "1001",
+		"merchant_key": "key-001",
+		"notify_url":   "https://api.example.com/api/v1/payments/callback/epay",
+		"return_url":   "https://shop.example.com/pay",
+		"sign_type":    "MD5",
+	}
+	form := signEpayV1AdapterCallbackForm(map[string]string{
+		"pid":          "1002",
+		"out_trade_no": "ORDER-1001",
+		"trade_no":     "EPAY-2001",
+		"money":        "10.00",
+		"trade_status": constants.EpayTradeStatusSuccess,
+	}, "key-001")
+
+	_, err := a.(CallbackVerifier).VerifyCallback(raw, form, nil)
+	if err == nil {
+		t.Fatalf("expected callback ownership error")
+	}
+	if !errors.Is(err, ErrSignatureInvalid) {
+		t.Fatalf("expected wrapped ErrSignatureInvalid, got %v", err)
+	}
+}
+
 func TestEpayAdapter_MapEpayError(t *testing.T) {
 	cases := []struct {
 		name string
@@ -130,4 +163,35 @@ func TestEpayAdapter_MapEpayError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func signEpayV1AdapterCallbackForm(params map[string]string, merchantKey string) map[string][]string {
+	form := make(map[string][]string, len(params)+2)
+	for key, value := range params {
+		form[key] = []string{value}
+	}
+	form["sign_type"] = []string{"MD5"}
+	form["sign"] = []string{md5Hex(buildEpayAdapterSignContent(params) + merchantKey)}
+	return form
+}
+
+func buildEpayAdapterSignContent(params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for key, value := range params {
+		if value == "" || key == "sign" || key == "sign_type" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", key, params[key]))
+	}
+	return strings.Join(pairs, "&")
+}
+
+func md5Hex(content string) string {
+	sum := md5.Sum([]byte(content))
+	return strings.ToLower(hex.EncodeToString(sum[:]))
 }

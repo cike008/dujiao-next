@@ -165,13 +165,13 @@ func TestCompleteOIDCLoginHappyPath(t *testing.T) {
 		return true, nil
 	}
 
-	authURL, err := svc.StartOIDCLogin(nil, telegramOIDCIntentLogin, 0)
+	authURL, err := svc.StartOIDCLogin(context.TODO(), telegramOIDCIntentLogin, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := mustQueryParam(t, authURL, "state")
 
-	verified, intent, userID, err := svc.CompleteOIDCLogin(nil, "the-code", state)
+	verified, intent, userID, err := svc.CompleteOIDCLogin(context.TODO(), "the-code", state)
 	if err != nil {
 		t.Fatalf("CompleteOIDCLogin: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestCompleteOIDCLoginHappyPath(t *testing.T) {
 		t.Fatalf("avatar %q", verified.AvatarURL)
 	}
 
-	if _, _, _, err := svc.CompleteOIDCLogin(nil, "the-code", state); err == nil {
+	if _, _, _, err := svc.CompleteOIDCLogin(context.TODO(), "the-code", state); err == nil {
 		t.Fatalf("expected error on reused state")
 	}
 }
@@ -229,16 +229,16 @@ func TestCompleteOIDCLoginRejectsBadAudience(t *testing.T) {
 	svc.replaySetNX = func(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
 		return true, nil
 	}
-	authURL, _ := svc.StartOIDCLogin(nil, telegramOIDCIntentLogin, 0)
+	authURL, _ := svc.StartOIDCLogin(context.TODO(), telegramOIDCIntentLogin, 0)
 	state := mustQueryParam(t, authURL, "state")
-	if _, _, _, err := svc.CompleteOIDCLogin(nil, "c", state); err == nil {
+	if _, _, _, err := svc.CompleteOIDCLogin(context.TODO(), "c", state); err == nil {
 		t.Fatalf("expected aud mismatch error")
 	}
 }
 
 func TestCompleteOIDCLoginUnknownState(t *testing.T) {
 	svc := newTestTelegramAuthServiceOIDC(t)
-	if _, _, _, err := svc.CompleteOIDCLogin(nil, "c", "no-such-state"); err == nil {
+	if _, _, _, err := svc.CompleteOIDCLogin(context.TODO(), "c", "no-such-state"); err == nil {
 		t.Fatalf("expected state invalid error")
 	}
 }

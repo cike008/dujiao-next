@@ -71,9 +71,29 @@ func (s *ProductMappingService) SyncProduct(mappingID uint) error {
 		return fmt.Errorf("get local product: %w", err)
 	}
 	if localProduct != nil {
+		needsProductUpdate := false
 		// 同步人工交付表单配置
 		if upProduct.ManualFormSchema != nil {
 			localProduct.ManualFormSchemaJSON = upProduct.ManualFormSchema
+			needsProductUpdate = true
+		}
+		// 上游未返回批发价时不覆盖本地配置，避免运营手动配置被同步任务清空。
+		if len(upProduct.WholesalePrices) > 0 {
+			wholesalePrices := convertUpstreamWholesalePrices(upProduct.WholesalePrices, conn.ExchangeRate, conn.PriceMarkupPercent, conn.PriceRoundingMode)
+			if len(wholesalePrices) > 0 {
+				localProduct.WholesalePrices = wholesalePrices
+				needsProductUpdate = true
+			} else {
+				logger.Warnw("sync_upstream_wholesale_prices_empty_after_convert",
+					"mapping_id", mapping.ID,
+					"connection_id", mapping.ConnectionID,
+					"upstream_product_id", mapping.UpstreamProductID,
+					"local_product_id", mapping.LocalProductID,
+					"upstream_tier_count", len(upProduct.WholesalePrices),
+				)
+			}
+		}
+		if needsProductUpdate {
 			_ = s.productRepo.Update(localProduct)
 		}
 	}
@@ -239,7 +259,7 @@ func (s *ProductMappingService) markUpstreamUnavailable(mapping *models.ProductM
 
 // SyncAllStock 同步所有活跃映射的库存（供定时任务调用）
 // 使用 Redis 锁防止任务重叠执行，并发调用上游 API 提升吞吐量
-func (s *ProductMappingService) SyncAllStock() error {
+func (s *ProductMappingService) SyncAllStock(cfg UpstreamSyncConfig) error {
 	ctx := context.Background()
 	const lockKey = "upstream:sync_stock_running"
 
@@ -271,9 +291,8 @@ func (s *ProductMappingService) SyncAllStock() error {
 	var errs []error
 	var wg sync.WaitGroup
 
-	// 每个连接并发处理
-	const connConcurrency = 3
-	sem := make(chan struct{}, connConcurrency)
+	// 每个连接并发处理，并发数由配置控制
+	sem := make(chan struct{}, cfg.SyncConnConcurrency)
 
 	for connID, connMappings := range byConn {
 		wg.Add(1)
@@ -281,7 +300,7 @@ func (s *ProductMappingService) SyncAllStock() error {
 		go func(connID uint, connMappings []models.ProductMapping) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := s.syncConnectionStock(connID, connMappings); err != nil {
+			if err := s.syncConnectionStock(connID, connMappings, cfg.SyncPageSize, cfg.SyncMaxPages); err != nil {
 				mu.Lock()
 				errs = append(errs, err)
 				mu.Unlock()
@@ -387,7 +406,7 @@ func (s *ProductMappingService) computeFullSyncInterval() time.Duration {
 }
 
 // syncConnectionStock 按连接批量同步：一次 ListProducts 拉取所有商品，内存匹配映射
-func (s *ProductMappingService) syncConnectionStock(connectionID uint, connMappings []models.ProductMapping) error {
+func (s *ProductMappingService) syncConnectionStock(connectionID uint, connMappings []models.ProductMapping, pageSize int, maxPages int) error {
 	conn, err := s.connService.GetByID(connectionID)
 	if err != nil || conn == nil {
 		return fmt.Errorf("get connection %d: %w", connectionID, err)
@@ -447,8 +466,6 @@ func (s *ProductMappingService) syncConnectionStock(connectionID uint, connMappi
 	fetchComplete := false
 	expectedTotal := 0
 	page := 1
-	const pageSize = 50
-	const maxPages = 200
 	for {
 		ctx, cancel := context.WithTimeout(syncCtx, 30*time.Second)
 		result, err := adapter.ListProducts(ctx, upstream.ListProductsOpts{
