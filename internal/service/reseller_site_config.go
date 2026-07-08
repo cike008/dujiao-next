@@ -412,6 +412,43 @@ func footerItemsFromEnvelope(raw models.JSON) []interface{} {
 	return make([]interface{}, 0)
 }
 
+// resellerAnnouncementLocalizedMap 兼容两种载体：DB 反序列化后的 map[string]interface{}
+// 与 Upsert 后内存对象里的 models.JSON。
+func resellerAnnouncementLocalizedMap(raw interface{}) map[string]interface{} {
+	switch typed := raw.(type) {
+	case map[string]interface{}:
+		return typed
+	case models.JSON:
+		return map[string]interface{}(typed)
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+// applyResellerAnnouncementToPublicConfig 将分销站公告以主站同构的
+// {type,title,content,version} 写入 public config；未启用或内容为空时移除该字段。
+func applyResellerAnnouncementToPublicConfig(out map[string]interface{}, raw models.JSON) {
+	delete(out, "announcement")
+	if !parseSettingBool(raw["enabled"]) {
+		return
+	}
+	content := resellerAnnouncementLocalizedMap(raw["content"])
+	if !hasHomeAnnouncementContent(content) {
+		return
+	}
+	title := resellerAnnouncementLocalizedMap(raw["title"])
+	annType, _ := raw["type"].(string)
+	if annType == "" {
+		annType = "info"
+	}
+	out["announcement"] = map[string]interface{}{
+		"type":    annType,
+		"title":   title,
+		"content": content,
+		"version": homeAnnouncementVersion(annType, title, content),
+	}
+}
+
 func applyResellerSiteConfigToPublicConfig(out map[string]interface{}, cfg *models.ResellerSiteConfig) {
 	if cfg == nil {
 		return
@@ -446,10 +483,10 @@ func applyResellerSiteConfigToPublicConfig(out map[string]interface{}, cfg *mode
 		out["seo"] = cfg.SEOJSON
 	}
 	// A saved reseller config intentionally owns announcement and navigation:
-	// default disabled announcement and default builtin nav prevent stale main-site content from leaking into a white-label site.
-	if len(cfg.AnnouncementJSON) > 0 {
-		out["announcement"] = cfg.AnnouncementJSON
-	}
+	// a disabled/empty announcement removes the field so main-site content never
+	// leaks into a white-label site; an enabled one is emitted in the same
+	// {type,title,content,version} shape the storefront expects (see GetActiveHomeAnnouncement).
+	applyResellerAnnouncementToPublicConfig(out, cfg.AnnouncementJSON)
 	if len(cfg.FooterLinksJSON) > 0 {
 		out["footer_links"] = footerItemsFromEnvelope(cfg.FooterLinksJSON)
 	}

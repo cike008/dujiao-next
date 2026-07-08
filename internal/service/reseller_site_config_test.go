@@ -162,8 +162,8 @@ func TestResellerSiteConfigServiceApplyPublicConfigOverlay(t *testing.T) {
 	if title["zh-CN"] != "覆盖标题" || title["en-US"] != "Overlay Title" {
 		t.Fatalf("unexpected localized seo overlay: %+v", seo)
 	}
-	if announcement := resellerSiteConfigTestMap(out["announcement"]); announcement["enabled"] != false {
-		t.Fatalf("saved reseller config should intentionally own announcement defaults, got %+v", announcement)
+	if _, exists := out["announcement"]; exists {
+		t.Fatalf("disabled reseller announcement should remove the field, got %+v", out["announcement"])
 	}
 	if nav := resellerSiteConfigTestMap(out["nav_config"]); nav["builtin"] == nil {
 		t.Fatalf("saved reseller config should intentionally own nav defaults, got %+v", nav)
@@ -171,6 +171,53 @@ func TestResellerSiteConfigServiceApplyPublicConfigOverlay(t *testing.T) {
 	tenantPayload := out["tenant"].(map[string]interface{})
 	if tenantPayload["mode"] != "reseller" || tenantPayload["host"] != "shop.example.test" {
 		t.Fatalf("unexpected tenant payload: %+v", tenantPayload)
+	}
+}
+
+func TestResellerSiteConfigServiceOverlayEmitsActiveAnnouncement(t *testing.T) {
+	db := openResellerManagementServiceTestDB(t)
+	repo := repository.NewResellerRepository(db)
+	user := seedResellerManagementUser(t, db, "site-config-announcement@example.test")
+	profile := models.ResellerProfile{UserID: user.ID, Status: models.ResellerProfileStatusActive, SettlementStatus: models.ResellerSettlementStatusNormal}
+	if err := db.Create(&profile).Error; err != nil {
+		t.Fatalf("create profile failed: %v", err)
+	}
+	svc := NewResellerSiteConfigService(repo)
+	if _, err := svc.UpdateUserSiteConfig(context.Background(), user.ID, ResellerSiteConfigInput{
+		SiteName: "Announcement Store",
+		Announcement: ResellerAnnouncementInput{
+			Enabled: true,
+			Type:    "success",
+			Title:   LocalizedTextInput{"zh-CN": "测试"},
+			Content: LocalizedTextInput{"zh-CN": "<p>测试测试</p>"},
+		},
+	}); err != nil {
+		t.Fatalf("save config failed: %v", err)
+	}
+	tenant := ResellerTenantContext("shop.example.test", profile.ID, user.ID, "shop.example.test")
+	out, err := svc.ApplyPublicConfigOverlay(context.Background(), tenant, map[string]interface{}{
+		"announcement": map[string]interface{}{"type": "info", "version": "main0000"},
+	})
+	if err != nil {
+		t.Fatalf("apply overlay failed: %v", err)
+	}
+	announcement := resellerSiteConfigTestMap(out["announcement"])
+	if announcement == nil {
+		t.Fatalf("enabled reseller announcement should be emitted, got %+v", out["announcement"])
+	}
+	if announcement["type"] != "success" {
+		t.Fatalf("unexpected announcement type: %+v", announcement)
+	}
+	if _, exists := announcement["enabled"]; exists {
+		t.Fatalf("public announcement should not expose enabled flag, got %+v", announcement)
+	}
+	version, _ := announcement["version"].(string)
+	if len(version) != 8 || version == "main0000" {
+		t.Fatalf("expected reseller-derived version fingerprint, got %q", version)
+	}
+	content := resellerSiteConfigTestMap(announcement["content"])
+	if content["zh-CN"] != "<p>测试测试</p>" {
+		t.Fatalf("unexpected announcement content: %+v", content)
 	}
 }
 
