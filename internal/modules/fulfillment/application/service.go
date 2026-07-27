@@ -31,6 +31,7 @@ type Service struct {
 	settingService        *settingsapp.Service
 	defaultEmailConfig    config.EmailConfig
 	downstreamCallbackSvc DownstreamCallbackEnqueuer
+	teamGenieSyncer       TeamGenieSyncer
 	userOAuthIdentityRepo externalidentitycontract.Store
 }
 
@@ -42,9 +43,18 @@ type DownstreamCallbackEnqueuer interface {
 	EnqueueCallback(orderID uint)
 }
 
+type TeamGenieSyncer interface {
+	NotifyFulfilled(order *orderdomain.Order)
+}
+
 // SetDownstreamCallbackService 设置下游回调服务（解决循环依赖）
 func (s *Service) SetDownstreamCallbackService(svc DownstreamCallbackEnqueuer) {
 	s.downstreamCallbackSvc = svc
+}
+
+// SetTeamGenieSyncer 设置 TeamGenie 售出同步服务。
+func (s *Service) SetTeamGenieSyncer(syncer TeamGenieSyncer) {
+	s.teamGenieSyncer = syncer
 }
 
 // Options 汇总交付用例依赖。
@@ -377,6 +387,10 @@ func (s *Service) CreateAuto(orderID uint) (*fulfillmentdomain.Fulfillment, erro
 	// B 侧：自动交付完成后触发下游回调
 	if s.downstreamCallbackSvc != nil {
 		s.downstreamCallbackSvc.EnqueueCallback(orderID)
+	}
+	if s.teamGenieSyncer != nil {
+		order.Fulfillment = fulfillment
+		s.teamGenieSyncer.NotifyFulfilled(order)
 	}
 	return fulfillment, nil
 }
