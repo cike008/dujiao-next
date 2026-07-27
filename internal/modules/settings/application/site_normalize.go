@@ -20,6 +20,10 @@ const (
 	settingSiteFooterLinkNameMaxRuneSize = 120
 	settingSiteFooterLinkURLMaxRuneSize  = 2000
 
+	settingSiteContactItemsMaxCount       = 20
+	settingSiteContactItemTypeMaxRuneSize = 40
+	settingSiteContactItemURLMaxRuneSize  = 2000
+
 	settingNavCustomItemsMaxCount        = 10
 	settingNavCustomItemTitleMaxRuneSize = 120
 	settingNavCustomItemURLMaxRuneSize   = 2000
@@ -128,6 +132,7 @@ func normalizeSiteContact(raw interface{}) map[string]interface{} {
 	result := map[string]interface{}{
 		"telegram": "",
 		"whatsapp": "",
+		"items":    make([]interface{}, 0),
 	}
 	contactMap, ok := raw.(map[string]interface{})
 	if !ok {
@@ -135,6 +140,79 @@ func normalizeSiteContact(raw interface{}) map[string]interface{} {
 	}
 	result["telegram"] = normalizeSettingText(contactMap["telegram"])
 	result["whatsapp"] = normalizeSettingText(contactMap["whatsapp"])
+	result["items"] = normalizeSiteContactItems(contactMap["items"])
+	return result
+}
+
+func normalizeSiteContactItems(raw interface{}) []interface{} {
+	itemsRaw, ok := raw.([]interface{})
+	if !ok {
+		return make([]interface{}, 0)
+	}
+
+	result := make([]interface{}, 0, len(itemsRaw))
+	for _, itemRaw := range itemsRaw {
+		itemMap, ok := itemRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		label := normalizeSiteLocalizedField(itemMap["label"])
+		allLabelEmpty := true
+		for _, lang := range settingSupportedLanguages {
+			if s, _ := label[lang].(string); s != "" {
+				allLabelEmpty = false
+				break
+			}
+		}
+
+		typ := strings.ToLower(normalizeSettingTextWithRuneLimit(itemMap["type"], settingSiteContactItemTypeMaxRuneSize))
+		if typ == "" {
+			typ = "custom"
+		}
+		value := normalizeSettingTextWithRuneLimit(itemMap["value"], settingSiteContactItemURLMaxRuneSize)
+		href := normalizeSettingTextWithRuneLimit(itemMap["href"], settingSiteContactItemURLMaxRuneSize)
+		if href == "" {
+			href = normalizeSettingTextWithRuneLimit(itemMap["url"], settingSiteContactItemURLMaxRuneSize)
+		}
+		qrCode := normalizeSettingTextWithRuneLimit(itemMap["qr_code"], settingSiteContactItemURLMaxRuneSize)
+
+		if allLabelEmpty || (value == "" && href == "" && qrCode == "") {
+			continue
+		}
+
+		target := normalizeSettingText(itemMap["target"])
+		if target != "_self" && target != "_blank" {
+			target = "_blank"
+		}
+
+		sortOrder := 0
+		if v, err := parseSettingInt(itemMap["sort_order"]); err == nil {
+			sortOrder = v
+		}
+
+		id := itemMap["id"]
+		if id == nil {
+			id = float64(0)
+		}
+
+		result = append(result, map[string]interface{}{
+			"id":         id,
+			"type":       typ,
+			"label":      label,
+			"value":      value,
+			"href":       href,
+			"target":     target,
+			"qr_code":    qrCode,
+			"enabled":    parseSettingBool(itemMap["enabled"]),
+			"sort_order": sortOrder,
+		})
+
+		if len(result) >= settingSiteContactItemsMaxCount {
+			break
+		}
+	}
+
 	return result
 }
 
