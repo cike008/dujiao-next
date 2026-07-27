@@ -394,6 +394,7 @@ const (
 	TaskUpstreamSyncStock           = "upstream:sync_stock"
 	TaskReconciliationRun           = "reconciliation:run"
 	TaskDownstreamCallback          = "downstream:callback"
+	TaskTeamGenieSyncFulfilled      = "teamgenie:sync_fulfilled"
 	TaskBotNotify                   = "bot:notify"
 	TaskTelegramBroadcast           = "telegram:broadcast"
 )

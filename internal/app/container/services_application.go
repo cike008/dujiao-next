@@ -28,6 +28,7 @@ import (
 	sitemapcontract "github.com/dujiao-next/internal/modules/sitemap/contract"
 	sitemapcache "github.com/dujiao-next/internal/modules/sitemap/infrastructure/cacheadapter"
 	sitemapcatalog "github.com/dujiao-next/internal/modules/sitemap/infrastructure/catalogreader"
+	teamgenieapp "github.com/dujiao-next/internal/modules/teamgenie/application"
 	walletapp "github.com/dujiao-next/internal/modules/wallet/application"
 	"github.com/dujiao-next/internal/platform/database/gormdb"
 	giftcardredeemgormuow "github.com/dujiao-next/internal/workflows/giftcardredeem/infrastructure/gormuow"
@@ -119,6 +120,8 @@ func (c *Container) initApplicationServices() {
 		DefaultEmailConfig:    c.Config.Email,
 		ExternalIdentityStore: c.ExternalIdentityStore,
 	})
+	c.TeamGenieSyncService = teamgenieapp.New(c.Config.TeamGenie, c.UserStore, c.QueueClient)
+	c.FulfillmentService.SetTeamGenieSyncer(c.TeamGenieSyncService)
 	c.CardSecretService = cardsecretapp.NewService(cardsecretapp.ServiceOptions{
 		Secrets:      c.CardSecretRepo,
 		Batches:      c.CardSecretBatchRepo,

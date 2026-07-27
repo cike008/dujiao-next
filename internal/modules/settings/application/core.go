@@ -2,6 +2,7 @@ package settingsapp
 
 import (
 	"github.com/dujiao-next/internal/config"
+	"github.com/dujiao-next/internal/constants"
 	settingscontract "github.com/dujiao-next/internal/modules/settings/contract"
 	"github.com/dujiao-next/internal/shared/jsonmap"
 )
@@ -72,6 +73,11 @@ func (s *Service) UpdateWithEffects(key string, value map[string]interface{}) (U
 	if s == nil || s.repo == nil {
 		return UpdateResult{}, nil
 	}
+	if key == constants.SettingKeySiteConfig {
+		if err := s.preserveSiteContactItems(value); err != nil {
+			return UpdateResult{}, err
+		}
+	}
 	normalized := s.registry.Normalize(key, jsonmap.JSON(value))
 
 	stored, err := s.repo.Upsert(key, normalized)
@@ -82,4 +88,37 @@ func (s *Service) UpdateWithEffects(key string, value map[string]interface{}) (U
 		Value:   stored,
 		Effects: s.registry.Effects(key),
 	}, nil
+}
+
+func (s *Service) preserveSiteContactItems(value map[string]interface{}) error {
+	contactMap, _ := value["contact"].(map[string]interface{})
+	if contactMap != nil {
+		if _, ok := contactMap["items"]; ok {
+			return nil
+		}
+	}
+
+	existing, err := s.GetByKey(constants.SettingKeySiteConfig)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return nil
+	}
+
+	existingContact, ok := existing["contact"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	items, ok := existingContact["items"]
+	if !ok {
+		return nil
+	}
+
+	if contactMap == nil {
+		contactMap = map[string]interface{}{}
+		value["contact"] = contactMap
+	}
+	contactMap["items"] = items
+	return nil
 }
