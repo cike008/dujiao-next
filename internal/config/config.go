@@ -31,6 +31,7 @@ type Config struct {
 	Email        EmailConfig        `mapstructure:"email"`
 	Order        OrderConfig        `mapstructure:"order"`
 	Captcha      CaptchaConfig      `mapstructure:"captcha"`
+	TeamGenie    TeamGenieConfig    `mapstructure:"teamgenie_sync"`
 	Web          WebConfig          `mapstructure:"web"`
 	Reseller     ResellerConfig     `mapstructure:"reseller"`
 }
@@ -137,6 +138,17 @@ type QueueConfig struct {
 	Concurrency          int            `mapstructure:"concurrency"`
 	Queues               map[string]int `mapstructure:"queues"`
 	UpstreamSyncInterval string         `mapstructure:"upstream_sync_interval"` // 上游库存同步间隔，如 "5m"、"10m"，默认 "5m"
+}
+
+// TeamGenieConfig configures fulfilled-card sync back to the TeamGenie service.
+type TeamGenieConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	WebhookURL     string `mapstructure:"webhook_url"`
+	SharedSecret   string `mapstructure:"shared_secret"`
+	Channel        string `mapstructure:"channel"`
+	SourcePlatform string `mapstructure:"source_platform"`
+	SourceSite     string `mapstructure:"source_site"`
+	TimeoutMS      int    `mapstructure:"timeout_ms"`
 }
 
 // OrderConfig 订单配置
@@ -404,6 +416,13 @@ func Load() *Config {
 	viper.SetDefault("email.verify_code.length", 6)
 	viper.SetDefault("order.payment_expire_minutes", 15)
 	viper.SetDefault("order.max_refund_days", 30)
+	viper.SetDefault("teamgenie_sync.enabled", false)
+	viper.SetDefault("teamgenie_sync.webhook_url", "")
+	viper.SetDefault("teamgenie_sync.shared_secret", "")
+	viper.SetDefault("teamgenie_sync.channel", "")
+	viper.SetDefault("teamgenie_sync.source_platform", "")
+	viper.SetDefault("teamgenie_sync.source_site", "")
+	viper.SetDefault("teamgenie_sync.timeout_ms", 3000)
 	viper.SetDefault("captcha.provider", "none")
 	viper.SetDefault("captcha.scenes.login", false)
 	viper.SetDefault("captcha.scenes.register_send_code", false)
