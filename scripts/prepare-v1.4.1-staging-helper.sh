@@ -75,6 +75,12 @@ app:
   totp_issuer: "MoshShop Staging"
 """)
 
+text = replace_block(text, "bootstrap", """
+bootstrap:
+  default_admin_username: ""
+  default_admin_password: ""
+""")
+
 text = replace_block(text, "database", f"""
 database:
   driver: postgres
