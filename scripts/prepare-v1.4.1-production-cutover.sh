@@ -26,6 +26,7 @@ fi
 APP_DIR="/opt/dujiao-next"
 CONFIG_FILE="${APP_DIR}/config/config.yml"
 COMPOSE_FILE="${APP_DIR}/docker-compose.yml"
+ENV_FILE="${APP_DIR}/.env"
 IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.1"
 TS="$(date +%Y%m%d%H%M%S)"
 CUTOVER_DIR="${APP_DIR}/cutover-v1.4.1-${TS}"
@@ -41,6 +42,7 @@ require_file() {
 
 require_file "$CONFIG_FILE"
 require_file "$COMPOSE_FILE"
+require_file "$ENV_FILE"
 require_file "$SHARE_NGINX"
 require_file "$ADMIN_NGINX"
 
@@ -189,8 +191,8 @@ dst.write_text(text)
 PY
 
 echo "== candidate validation =="
-docker compose -f "$CUTOVER_DIR/docker-compose.yml.candidate" config --services
-docker compose -f "$CUTOVER_DIR/docker-compose.yml.candidate" config --images
+docker compose --env-file "$ENV_FILE" -f "$CUTOVER_DIR/docker-compose.yml.candidate" config --services
+docker compose --env-file "$ENV_FILE" -f "$CUTOVER_DIR/docker-compose.yml.candidate" config --images
 nginx -t
 echo
 echo "Candidate files:"
