@@ -1,0 +1,74 @@
+# Dujiao-Next v1.4.1 hybrid deployment template.
+#
+# This keeps the existing custom React storefront (`unicard-themes`) and
+# TeamGenie sync service, while replacing the old v1.3 API + admin pair with
+# the new v1.4 fullstack backend image.
+#
+# Review paths, image tags, secrets, and network names before use.
+
+services:
+  dujiaonext-postgres:
+    image: postgres:16-alpine
+    container_name: dujiaonext-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dujiao
+      POSTGRES_USER: dujiao
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - /opt/dujiao-next/data/postgres:/var/lib/postgresql/data
+    networks:
+      - dujiao-next
+
+  dujiaonext-redis:
+    image: redis:7-alpine
+    container_name: dujiaonext-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - /opt/dujiao-next/data/redis:/data
+    networks:
+      - dujiao-next
+
+  dujiaonext:
+    image: dujiaonext/dujiao-next:teamgenie-v1.4.1
+    container_name: dujiaonext
+    restart: unless-stopped
+    depends_on:
+      - dujiaonext-postgres
+      - dujiaonext-redis
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - /opt/dujiao-next/config/config.yml:/app/config.yml:ro
+      - /opt/dujiao-next/data/uploads:/app/uploads
+      - /opt/dujiao-next/data/logs:/app/logs
+    networks:
+      - dujiao-next
+
+  unicard-themes:
+    image: nginx:alpine
+    container_name: unicard-themes
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:80"
+    volumes:
+      - /opt/unicard-themes/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /opt/unicard-themes/dist:/usr/share/nginx/html:ro
+    networks:
+      - dujiao-next
+
+  teamgenie-sync:
+    image: teamgenie-sync:latest
+    container_name: teamgenie-sync
+    restart: unless-stopped
+    env_file:
+      - /home/deploy/runtime/teamgenie-sync-service/.env
+    volumes:
+      - /home/deploy/runtime/teamgenie-sync-service:/app/runtime
+    networks:
+      - dujiao-next
+
+networks:
+  dujiao-next:
+    name: dujiao-next
