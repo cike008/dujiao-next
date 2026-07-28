@@ -188,9 +188,22 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 docker exec dujiaonext-postgres-staging pg_isready -U dujiao -d dujiao
+sleep 5
+docker exec dujiaonext-postgres-staging pg_isready -U dujiao -d dujiao
 
 echo "--- restoring production dump into isolated staging database ---"
-cat "$BACKUP_DIR/postgres-dujiao.dump" | docker exec -i dujiaonext-postgres-staging pg_restore -U dujiao -d dujiao --no-owner --role=dujiao
+for attempt in $(seq 1 5); do
+  if cat "$BACKUP_DIR/postgres-dujiao.dump" | docker exec -i dujiaonext-postgres-staging pg_restore -U dujiao -d dujiao --no-owner --role=dujiao; then
+    break
+  fi
+  if [ "$attempt" -eq 5 ]; then
+    echo "staging database restore failed after ${attempt} attempts" >&2
+    exit 1
+  fi
+  echo "restore attempt ${attempt} failed; waiting for postgres to settle..."
+  sleep 5
+  docker exec dujiaonext-postgres-staging pg_isready -U dujiao -d dujiao
+done
 
 echo "--- starting v1.4.1 TeamGenie staging backend ---"
 docker compose up -d dujiaonext-staging
