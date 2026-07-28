@@ -54,7 +54,7 @@ def replace_block(src: str, name: str, block: str) -> str:
     i = 0
     while i < len(lines):
         line = lines[i]
-        if line == f"{name}:":
+        if line.strip() == f"{name}:":
             i += 1
             while i < len(lines):
                 current = lines[i]
