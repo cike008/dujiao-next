@@ -16,15 +16,22 @@ fi
 echo "Syncing fullstack source:"
 echo "  local : $SOURCE_DIR"
 echo "  remote: ${REMOTE_HOST}:${REMOTE_PATH}"
-ssh "$REMOTE_HOST" "mkdir -p '${REMOTE_PATH%/}'"
-rsync -az --delete \
-  --exclude '.git/' \
-  --exclude '.github/' \
-  --exclude '.DS_Store' \
-  --exclude 'server' \
-  --exclude '.gocache/' \
-  --exclude '.gomodcache/' \
-  "$SOURCE_DIR/" "${REMOTE_HOST}:${REMOTE_PATH}"
+if ! git -C "$SOURCE_DIR" diff --quiet || ! git -C "$SOURCE_DIR" diff --cached --quiet; then
+  echo "Source tree has uncommitted changes. Commit or stash before building a release image." >&2
+  exit 1
+fi
+
+git -C "$SOURCE_DIR" archive --format=tar.gz HEAD | ssh "$REMOTE_HOST" "set -euo pipefail
+  target='${REMOTE_PATH%/}'
+  next=\"\${target}.next\"
+  prev=\"\${target}.prev\"
+  rm -rf \"\$next\"
+  mkdir -p \"\$next\"
+  tar -xzf - -C \"\$next\"
+  rm -rf \"\$prev\"
+  if [ -d \"\$target\" ]; then mv \"\$target\" \"\$prev\"; fi
+  mv \"\$next\" \"\$target\"
+"
 
 echo "Building fullstack image on $REMOTE_HOST:"
 echo "  image: ${IMAGE_TAG}"
