@@ -42,7 +42,6 @@ fi
 
 python3 - "$STAGE_DIR/config/config.yml" "$STAGE_DB_PASSWORD" <<'PY'
 import pathlib
-import re
 import sys
 
 path = pathlib.Path(sys.argv[1])
@@ -50,8 +49,22 @@ db_password = sys.argv[2]
 text = path.read_text()
 
 def replace_block(src: str, name: str, block: str) -> str:
-    pattern = re.compile(rf"^{name}:\n(?:^[ \t].*\n?)*", re.M)
-    cleaned = pattern.sub("", src).rstrip()
+    lines = src.splitlines()
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line == f"{name}:":
+            i += 1
+            while i < len(lines):
+                current = lines[i]
+                if current and not current.startswith((" ", "\t", "#")):
+                    break
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    cleaned = "\n".join(out).rstrip()
     return cleaned + "\n\n" + block.rstrip() + "\n"
 
 text = replace_block(text, "database", f"""
