@@ -51,9 +51,8 @@ text = path.read_text()
 
 def replace_block(src: str, name: str, block: str) -> str:
     pattern = re.compile(rf"^{name}:\n(?:^[ \t].*\n?)*", re.M)
-    if pattern.search(src):
-        return pattern.sub(block.rstrip() + "\n", src)
-    return src.rstrip() + "\n\n" + block.rstrip() + "\n"
+    cleaned = pattern.sub("", src).rstrip()
+    return cleaned + "\n\n" + block.rstrip() + "\n"
 
 text = replace_block(text, "database", f"""
 database:
