@@ -26,6 +26,7 @@ fi
 
 STAGE_DIR="/opt/dujiao-next-staging-v1.4.1"
 STAGE_DB_PASSWORD="dujiao_staging_only_local"
+STAGE_APP_SECRET="$(openssl rand -hex 32)"
 IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.1"
 
 echo "staging_dir=${STAGE_DIR}"
@@ -40,12 +41,13 @@ elif [ -f "$BACKUP_DIR/uploads.tar.gz" ]; then
   tar -C "$STAGE_DIR/data" -xzf "$BACKUP_DIR/uploads.tar.gz"
 fi
 
-python3 - "$STAGE_DIR/config/config.yml" "$STAGE_DB_PASSWORD" <<'PY'
+python3 - "$STAGE_DIR/config/config.yml" "$STAGE_DB_PASSWORD" "$STAGE_APP_SECRET" <<'PY'
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
 db_password = sys.argv[2]
+app_secret = sys.argv[3]
 text = path.read_text()
 
 def replace_block(src: str, name: str, block: str) -> str:
@@ -66,6 +68,12 @@ def replace_block(src: str, name: str, block: str) -> str:
         i += 1
     cleaned = "\n".join(out).rstrip()
     return cleaned + "\n\n" + block.rstrip() + "\n"
+
+text = replace_block(text, "app", f"""
+app:
+  secret_key: "{app_secret}"
+  totp_issuer: "MoshShop Staging"
+""")
 
 text = replace_block(text, "database", f"""
 database:
