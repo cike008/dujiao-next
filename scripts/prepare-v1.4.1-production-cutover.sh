@@ -122,7 +122,7 @@ new_service = f"""  dujiaonext:
 
 while i < len(lines):
     line = lines[i]
-    if line == "  dujiaonext-api:":
+    if line.strip() == "dujiaonext-api:":
         out.extend(new_service)
         inserted = True
         i += 1
