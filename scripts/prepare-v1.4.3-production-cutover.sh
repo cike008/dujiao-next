@@ -92,10 +92,12 @@ dst = pathlib.Path(sys.argv[2])
 image = sys.argv[3]
 lines = src.read_text().splitlines()
 
+top_level_re = re.compile(r"^[A-Za-z0-9_-]+:\s*$")
 service_re = re.compile(r"^  [A-Za-z0-9_-]+:\s*$")
 out = []
 i = 0
 inserted = False
+inside_services = False
 target_services = {"dujiaonext", "dujiaonext-api"}
 
 new_service = f"""  dujiaonext:
@@ -125,12 +127,18 @@ new_service = f"""  dujiaonext:
 
 while i < len(lines):
     line = lines[i]
-    service_name = line.strip()[:-1] if service_re.match(line) else ""
+    stripped = line.strip()
+    if top_level_re.match(line):
+        inside_services = stripped == "services:"
+    service_name = line.strip()[:-1] if inside_services and service_re.match(line) else ""
     if service_name in target_services:
         out.extend(new_service)
         inserted = True
         i += 1
-        while i < len(lines) and not service_re.match(lines[i]):
+        while i < len(lines):
+            next_line = lines[i]
+            if top_level_re.match(next_line) or service_re.match(next_line):
+                break
             i += 1
         continue
     out.append(line)
