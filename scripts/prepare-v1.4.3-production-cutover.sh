@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${1:-dujiao-vps}"
-REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.1-production-cutover.sh"
+REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.3-production-cutover.sh"
 
 echo "Uploading production cutover helper to ${HOST}:${REMOTE_SCRIPT}..."
 
@@ -13,8 +13,8 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This cutover helper must run with sudo/root on the VPS." >&2
-  echo "Dry run: sudo bash /tmp/dujiao-next-v1.4.1-production-cutover.sh" >&2
-  echo "Apply:   sudo bash /tmp/dujiao-next-v1.4.1-production-cutover.sh --apply" >&2
+  echo "Dry run: sudo bash /tmp/dujiao-next-v1.4.3-production-cutover.sh" >&2
+  echo "Apply:   sudo bash /tmp/dujiao-next-v1.4.3-production-cutover.sh --apply" >&2
   exit 1
 fi
 
@@ -27,9 +27,9 @@ APP_DIR="/opt/dujiao-next"
 CONFIG_FILE="${APP_DIR}/config/config.yml"
 COMPOSE_FILE="${APP_DIR}/docker-compose.yml"
 ENV_FILE="${APP_DIR}/.env"
-IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.1"
+IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.3"
 TS="$(date +%Y%m%d%H%M%S)"
-CUTOVER_DIR="${APP_DIR}/cutover-v1.4.1-${TS}"
+CUTOVER_DIR="${APP_DIR}/cutover-v1.4.3-${TS}"
 SHARE_NGINX="/etc/nginx/sites-available/share.aimosh.com"
 ADMIN_NGINX="/etc/nginx/sites-available/moshskmgr.aimosh.com"
 
@@ -68,7 +68,7 @@ if [ -z "$ADMIN_PATH" ] || [ "$ADMIN_PATH" = "/" ] || [ "$ADMIN_PATH" = "/admin"
   exit 1
 fi
 
-echo "== v1.4.1 production cutover helper =="
+echo "== v1.4.3 production cutover helper =="
 echo "mode=$([ "$APPLY" -eq 1 ] && echo apply || echo dry-run)"
 echo "cutover_dir=${CUTOVER_DIR}"
 echo "admin_path=${ADMIN_PATH}"
@@ -203,7 +203,7 @@ echo "  $CUTOVER_DIR/moshskmgr.aimosh.com.candidate"
 if [ "$APPLY" -ne 1 ]; then
   echo
   echo "Dry run completed. No production files were modified."
-  echo "To apply after review: sudo bash /tmp/dujiao-next-v1.4.1-production-cutover.sh --apply"
+  echo "To apply after review: sudo bash /tmp/dujiao-next-v1.4.3-production-cutover.sh --apply"
   exit 0
 fi
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${1:-dujiao-vps}"
-REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.1-staging-restore.sh"
+REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.3-staging-restore.sh"
 
 echo "Uploading staging restore helper to ${HOST}:${REMOTE_SCRIPT}..."
 
@@ -13,21 +13,21 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This staging helper must run with sudo/root on the VPS." >&2
-  echo "Run: sudo bash /tmp/dujiao-next-v1.4.1-staging-restore.sh /opt/backups/dujiao-next-v1.4.1-preflight-YYYYmmddHHMMSS" >&2
+  echo "Run: sudo bash /tmp/dujiao-next-v1.4.3-staging-restore.sh /opt/backups/dujiao-next-v1.4.3-preflight-YYYYmmddHHMMSS" >&2
   exit 1
 fi
 
 BACKUP_DIR="${1:-}"
 if [ -z "$BACKUP_DIR" ] || [ ! -f "$BACKUP_DIR/postgres-dujiao.dump" ] || [ ! -f "$BACKUP_DIR/dujiao-next/config.yml" ]; then
-  echo "Usage: sudo bash /tmp/dujiao-next-v1.4.1-staging-restore.sh /opt/backups/dujiao-next-v1.4.1-preflight-YYYYmmddHHMMSS" >&2
+  echo "Usage: sudo bash /tmp/dujiao-next-v1.4.3-staging-restore.sh /opt/backups/dujiao-next-v1.4.3-preflight-YYYYmmddHHMMSS" >&2
   echo "The backup directory must contain postgres-dujiao.dump and dujiao-next/config.yml." >&2
   exit 1
 fi
 
-STAGE_DIR="/opt/dujiao-next-staging-v1.4.1"
+STAGE_DIR="/opt/dujiao-next-staging-v1.4.3"
 STAGE_DB_PASSWORD="dujiao_staging_only_local"
 STAGE_APP_SECRET="$(openssl rand -hex 32)"
-IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.1"
+IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.3"
 
 echo "staging_dir=${STAGE_DIR}"
 install -d -m 750 "$STAGE_DIR/config" "$STAGE_DIR/data/postgres" "$STAGE_DIR/data/redis" "$STAGE_DIR/data/uploads" "$STAGE_DIR/data/logs"
@@ -219,7 +219,7 @@ for attempt in $(seq 1 5); do
   docker exec dujiaonext-postgres-staging pg_isready -U dujiao -d dujiao
 done
 
-echo "--- starting v1.4.1 TeamGenie staging backend ---"
+echo "--- starting v1.4.3 TeamGenie staging backend ---"
 docker compose up -d dujiaonext-staging
 
 echo "--- staging status ---"
@@ -235,4 +235,4 @@ REMOTE
 echo
 echo "The helper has been uploaded. Run this on the VPS:"
 echo
-echo "  sudo bash $REMOTE_SCRIPT /opt/backups/dujiao-next-v1.4.1-preflight-YYYYmmddHHMMSS"
+echo "  sudo bash $REMOTE_SCRIPT /opt/backups/dujiao-next-v1.4.3-preflight-YYYYmmddHHMMSS"
