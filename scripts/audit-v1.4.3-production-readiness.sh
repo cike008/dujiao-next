@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${1:-dujiao-vps}"
-REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.1-production-readiness.sh"
+REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.3-production-readiness.sh"
 
 echo "Uploading production readiness audit helper to ${HOST}:${REMOTE_SCRIPT}..."
 
@@ -13,15 +13,15 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This audit helper must run with sudo/root on the VPS." >&2
-  echo "Run: sudo bash /tmp/dujiao-next-v1.4.1-production-readiness.sh" >&2
+  echo "Run: sudo bash /tmp/dujiao-next-v1.4.3-production-readiness.sh" >&2
   exit 1
 fi
 
 CONFIG_FILE="${CONFIG_FILE:-/opt/dujiao-next/config/config.yml}"
 COMPOSE_DIR="${COMPOSE_DIR:-/opt/dujiao-next}"
-IMAGE_TAG="${IMAGE_TAG:-dujiaonext/dujiao-next:teamgenie-v1.4.1}"
+IMAGE_TAG="${IMAGE_TAG:-dujiaonext/dujiao-next:teamgenie-v1.4.3}"
 
-echo "== Dujiao-Next v1.4.1 Production Readiness Audit =="
+echo "== Dujiao-Next v1.4.3 Production Readiness Audit =="
 echo "config_file=${CONFIG_FILE}"
 echo "compose_dir=${COMPOSE_DIR}"
 echo "image_tag=${IMAGE_TAG}"
@@ -78,7 +78,7 @@ for section in required_sections:
 
 app_secret_len = length_of("app", "secret_key")
 if "app" not in sections:
-    print("FAIL app_section_missing: add persistent app.secret_key before v1.4.1 production cutover")
+    print("FAIL app_section_missing: add persistent app.secret_key before v1.4.3 production cutover")
 elif app_secret_len < 32:
     print(f"FAIL app_secret_weak: length={app_secret_len}")
 else:
@@ -127,7 +127,7 @@ fi
 
 echo
 echo "== Latest backup candidates =="
-find /opt/backups -maxdepth 1 -type d -name 'dujiao-next-v1.4.1-preflight-*' -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -5 || true
+find /opt/backups -maxdepth 1 -type d -name 'dujiao-next-v1.4.3-preflight-*' -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -5 || true
 
 echo
 echo "Audit completed. No production files were modified."

@@ -4,9 +4,9 @@ set -euo pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${REMOTE_HOST:-dujiao-vps}"
-REMOTE_PATH="${REMOTE_PATH:-/home/deploy/services/dujiao-next-v1.4.1-teamgenie/}"
-IMAGE_TAG="${IMAGE_TAG:-dujiaonext/dujiao-next:teamgenie-v1.4.1}"
-APP_VERSION="${APP_VERSION:-v1.4.1-teamgenie}"
+REMOTE_PATH="${REMOTE_PATH:-/home/deploy/services/dujiao-next-v1.4.3-teamgenie/}"
+IMAGE_TAG="${IMAGE_TAG:-dujiaonext/dujiao-next:teamgenie-v1.4.3}"
+APP_VERSION="${APP_VERSION:-v1.4.3-teamgenie}"
 
 if [[ ! -f "$SOURCE_DIR/go.mod" || ! -f "$SOURCE_DIR/Dockerfile" || ! -d "$SOURCE_DIR/frontend/admin" ]]; then
   echo "Source directory does not look like a v1.4 fullstack Dujiao-Next tree: $SOURCE_DIR" >&2

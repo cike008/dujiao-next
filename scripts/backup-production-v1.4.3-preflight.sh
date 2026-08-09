@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${1:-dujiao-vps}"
-REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.1-preflight-backup.sh"
+REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.3-preflight-backup.sh"
 
 echo "Uploading pre-upgrade backup helper to ${HOST}:${REMOTE_SCRIPT}..."
 
@@ -13,12 +13,12 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This backup helper must run with sudo/root on the VPS." >&2
-  echo "Run: sudo bash /tmp/dujiao-next-v1.4.1-preflight-backup.sh" >&2
+  echo "Run: sudo bash /tmp/dujiao-next-v1.4.3-preflight-backup.sh" >&2
   exit 1
 fi
 
 TS="$(date +%Y%m%d%H%M%S)"
-BACKUP_DIR="/opt/backups/dujiao-next-v1.4.1-preflight-${TS}"
+BACKUP_DIR="/opt/backups/dujiao-next-v1.4.3-preflight-${TS}"
 
 echo "backup_dir=${BACKUP_DIR}"
 install -d -m 750 "$BACKUP_DIR"
