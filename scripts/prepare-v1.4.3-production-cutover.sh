@@ -96,6 +96,7 @@ service_re = re.compile(r"^  [A-Za-z0-9_-]+:\s*$")
 out = []
 i = 0
 inserted = False
+target_services = {"dujiaonext", "dujiaonext-api"}
 
 new_service = f"""  dujiaonext:
     image: {image}
@@ -124,7 +125,8 @@ new_service = f"""  dujiaonext:
 
 while i < len(lines):
     line = lines[i]
-    if line.strip() == "dujiaonext-api:":
+    service_name = line.strip()[:-1] if service_re.match(line) else ""
+    if service_name in target_services:
         out.extend(new_service)
         inserted = True
         i += 1
@@ -135,7 +137,7 @@ while i < len(lines):
     i += 1
 
 if not inserted:
-    raise SystemExit("dujiaonext-api service block not found")
+    raise SystemExit("dujiaonext or dujiaonext-api service block not found")
 
 dst.write_text("\n".join(out).rstrip() + "\n")
 PY
@@ -244,7 +246,10 @@ if [ "$ok" -ne 1 ]; then
   cp -a "$CUTOVER_DIR/docker-compose.yml.before" "$COMPOSE_FILE"
   cp -a "$CUTOVER_DIR/share.aimosh.com.before" "$SHARE_NGINX"
   cp -a "$CUTOVER_DIR/moshskmgr.aimosh.com.before" "$ADMIN_NGINX"
-  docker start dujiaonext-api >/dev/null 2>&1 || true
+  (
+    cd "$APP_DIR"
+    docker compose up -d dujiaonext >/dev/null 2>&1 || docker start dujiaonext-api >/dev/null 2>&1 || true
+  )
   nginx -t && nginx -s reload
   exit 1
 fi
