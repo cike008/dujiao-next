@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${1:-dujiao-vps}"
-REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.3-staging-restore.sh"
+REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.5-staging-restore.sh"
 
 echo "Uploading staging restore helper to ${HOST}:${REMOTE_SCRIPT}..."
 
@@ -13,21 +13,21 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This staging helper must run with sudo/root on the VPS." >&2
-  echo "Run: sudo bash /tmp/dujiao-next-v1.4.3-staging-restore.sh /opt/backups/dujiao-next-v1.4.3-preflight-YYYYmmddHHMMSS" >&2
+  echo "Run: sudo bash /tmp/dujiao-next-v1.4.5-staging-restore.sh /opt/backups/dujiao-next-v1.4.5-preflight-YYYYmmddHHMMSS" >&2
   exit 1
 fi
 
 BACKUP_DIR="${1:-}"
 if [ -z "$BACKUP_DIR" ] || [ ! -f "$BACKUP_DIR/postgres-dujiao.dump" ] || [ ! -f "$BACKUP_DIR/dujiao-next/config.yml" ]; then
-  echo "Usage: sudo bash /tmp/dujiao-next-v1.4.3-staging-restore.sh /opt/backups/dujiao-next-v1.4.3-preflight-YYYYmmddHHMMSS" >&2
+  echo "Usage: sudo bash /tmp/dujiao-next-v1.4.5-staging-restore.sh /opt/backups/dujiao-next-v1.4.5-preflight-YYYYmmddHHMMSS" >&2
   echo "The backup directory must contain postgres-dujiao.dump and dujiao-next/config.yml." >&2
   exit 1
 fi
 
-STAGE_DIR="/opt/dujiao-next-staging-v1.4.3"
+STAGE_DIR="/opt/dujiao-next-staging-v1.4.5"
 STAGE_DB_PASSWORD="dujiao_staging_only_local"
 STAGE_APP_SECRET="$(openssl rand -hex 32)"
-IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.3"
+IMAGE_TAG="dujiaonext/dujiao-next:teamgenie-v1.4.5"
 
 echo "staging_dir=${STAGE_DIR}"
 install -d -m 750 "$STAGE_DIR/config" "$STAGE_DIR/data/postgres" "$STAGE_DIR/data/redis" "$STAGE_DIR/data/uploads" "$STAGE_DIR/data/logs"
@@ -136,7 +136,7 @@ server:
 
 text = replace_block(text, "web", """
 web:
-  admin_path: "/staging-admin-v141"
+  admin_path: "/staging-admin-v145"
 """)
 
 path.write_text(text)
@@ -219,20 +219,71 @@ for attempt in $(seq 1 5); do
   docker exec dujiaonext-postgres-staging pg_isready -U dujiao -d dujiao
 done
 
-echo "--- starting v1.4.3 TeamGenie staging backend ---"
+echo "--- starting v1.4.5 TeamGenie staging backend ---"
 docker compose up -d dujiaonext-staging
 
 echo "--- staging status ---"
 docker compose ps
-sleep 5
-curl -fsS http://127.0.0.1:18081/health || true
+echo "--- waiting for v1.4.5 backend and migrations ---"
+healthy=0
+for _ in $(seq 1 60); do
+  if curl -fsS http://127.0.0.1:18081/health >/dev/null 2>&1; then
+    healthy=1
+    break
+  fi
+  sleep 2
+done
+if [ "$healthy" -ne 1 ]; then
+  docker logs --tail=200 dujiaonext-staging || true
+  echo "staging backend failed health check" >&2
+  exit 1
+fi
+curl -fsS http://127.0.0.1:18081/health
+echo
+curl -fsS http://127.0.0.1:18081/api/v1/public/config | grep -o '"app_version":"[^"]*"'
+echo
+
+column_count="$(docker exec dujiaonext-postgres-staging psql -U dujiao -d dujiao -Atc "
+SELECT count(*)
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (table_name, column_name) IN (
+    ('payments', 'fee_policy'),
+    ('order_refund_records', 'payment_fee_refunded'),
+    ('order_refund_records', 'payment_fee_refunded_amount')
+  );")"
+if [ "$column_count" != "3" ]; then
+  echo "v1.4.5 payment/refund migration columns incomplete: ${column_count}/3" >&2
+  exit 1
+fi
+
+marker_count="$(docker exec dujiaonext-postgres-staging psql -U dujiao -d dujiao -Atc "
+SELECT count(*)
+FROM settings
+WHERE key IN ('migration/payment_fee_policy_v1', 'migration/order_refund_payment_fee_v1')
+  AND value_json->>'done' = 'true';")"
+if [ "$marker_count" != "2" ]; then
+  echo "v1.4.5 payment/refund migration markers incomplete: ${marker_count}/2" >&2
+  exit 1
+fi
+
+empty_fee_policy_count="$(docker exec dujiaonext-postgres-staging psql -U dujiao -d dujiao -Atc "
+SELECT count(*) FROM payments WHERE fee_policy IS NULL OR fee_policy = '';")"
+if [ "$empty_fee_policy_count" != "0" ]; then
+  echo "payments with empty fee_policy remain after migration: ${empty_fee_policy_count}" >&2
+  exit 1
+fi
+
+echo "migration_columns=3/3"
+echo "migration_markers=2/2"
+echo "payments_empty_fee_policy=0"
 echo
 echo "Staging prepared. Local VPS URL: http://127.0.0.1:18081"
-echo "Admin path: http://127.0.0.1:18081/staging-admin-v141/"
+echo "Admin path: http://127.0.0.1:18081/staging-admin-v145/"
 echo "Logs: docker logs --tail=200 dujiaonext-staging"
 REMOTE
 
 echo
 echo "The helper has been uploaded. Run this on the VPS:"
 echo
-echo "  sudo bash $REMOTE_SCRIPT /opt/backups/dujiao-next-v1.4.3-preflight-YYYYmmddHHMMSS"
+echo "  sudo bash $REMOTE_SCRIPT /opt/backups/dujiao-next-v1.4.5-preflight-YYYYmmddHHMMSS"
