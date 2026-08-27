@@ -3,7 +3,7 @@
 set -euo pipefail
 
 HOST="${1:-dujiao-vps}"
-REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.5-patch-production-config.sh"
+REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.6-patch-production-config.sh"
 
 echo "Uploading production config patch helper to ${HOST}:${REMOTE_SCRIPT}..."
 
@@ -13,7 +13,7 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This config patch helper must run with sudo/root on the VPS." >&2
-  echo "Run: sudo bash /tmp/dujiao-next-v1.4.5-patch-production-config.sh [admin_path]" >&2
+  echo "Run: sudo bash /tmp/dujiao-next-v1.4.6-patch-production-config.sh [admin_path]" >&2
   exit 1
 fi
 

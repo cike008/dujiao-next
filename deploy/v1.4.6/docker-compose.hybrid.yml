@@ -1,4 +1,4 @@
-# Dujiao-Next v1.4.5 hybrid deployment template.
+# Dujiao-Next v1.4.6 hybrid deployment template.
 #
 # This keeps the existing custom React storefront (`unicard-themes`) and
 # TeamGenie sync service, while replacing the old v1.3 API + admin pair with
@@ -31,7 +31,7 @@ services:
       - dujiao-next
 
   dujiaonext:
-    image: dujiaonext/dujiao-next:teamgenie-v1.4.5
+    image: dujiaonext/dujiao-next:teamgenie-v1.4.6
     container_name: dujiaonext
     restart: unless-stopped
     depends_on:
