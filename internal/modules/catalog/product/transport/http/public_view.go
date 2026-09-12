@@ -76,6 +76,7 @@ func (v *publicProductView) toProductResp() productpresenter.Product {
 	resp := productpresenter.Product{
 		ID:                   v.Product.ID,
 		CategoryID:           v.Product.CategoryID,
+		SortOrder:            v.Product.SortOrder,
 		Slug:                 v.Product.Slug,
 		SeoMeta:              v.Product.SeoMetaJSON,
 		Title:                v.Product.TitleJSON,

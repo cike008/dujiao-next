@@ -16,6 +16,7 @@ import (
 type Product struct {
 	ID                   uint              `json:"id"`
 	CategoryID           uint              `json:"category_id"`
+	SortOrder            int               `json:"sort_order"`
 	Slug                 string            `json:"slug"`
 	SeoMeta              jsonmap.JSON      `json:"seo_meta"`
 	Title                jsonmap.JSON      `json:"title"`
