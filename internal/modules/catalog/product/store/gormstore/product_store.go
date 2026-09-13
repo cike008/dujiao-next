@@ -13,6 +13,7 @@ import (
 	"github.com/dujiao-next/internal/persistence/gormutil"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ProductStore 是 Catalog Product 端口的 GORM 实现。
@@ -255,7 +256,7 @@ func (r *ProductStore) Create(product *productdomain.Product) error {
 
 // Update 更新商品
 func (r *ProductStore) Update(product *productdomain.Product) error {
-	return r.db.Save(product).Error
+	return r.db.Omit(clause.Associations).Save(product).Error
 }
 
 // QuickUpdate 快速更新商品指定字段
