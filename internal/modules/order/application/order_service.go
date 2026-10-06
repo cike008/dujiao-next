@@ -793,8 +793,8 @@ func generateOrderNo() string {
 	return serial.Generate("DJ")
 }
 
-// guestPasswordMinLength 游客订单密码最小长度
-const guestPasswordMinLength = 6
+// guestPasswordMinLength 仅约束新订单；历史订单查询继续接受原密码。
+const guestPasswordMinLength = 8
 
 func validateGuestPassword(password string) error {
 	password = strings.TrimSpace(password)

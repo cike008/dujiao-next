@@ -87,6 +87,7 @@ func TestRouteDomainFilesPreserveTrustBoundaries(t *testing.T) {
 				`ordertransport.RegisterUserCreateAndPayRoute(user, orderCreateHandler)`,
 				`ordertransport.RegisterUserPaymentChannelsRoute(user, userOrderHandler)`,
 				`ordertransport.RegisterGuestReadRoutes(guestRead, guestOrderHandler)`,
+				`guest.Use(middleware.NoStoreMiddleware())`,
 				`guestRead.Use(middleware.RateLimitMiddleware(redisClient, guestReadRule, middleware.KeyByIP))`,
 				`ordertransport.RegisterGuestPreviewRoute(guestRead, orderPreviewHandler)`,
 				`ordertransport.RegisterGuestCreateRoute(guestWrite, orderCreateHandler)`,

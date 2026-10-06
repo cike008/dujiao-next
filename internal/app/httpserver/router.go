@@ -195,8 +195,8 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 	guestReadRule := middleware.RateLimitRule{
 		Prefix:        fmt.Sprintf("%s:rate:guest_orders:read", redisPrefix),
 		WindowSeconds: 60,
-		MaxRequests:   120,
-		BlockSeconds:  60,
+		MaxRequests:   60,
+		BlockSeconds:  300,
 		MessageKey:    "error.rate_limited",
 	}
 	guestWriteRule := middleware.RateLimitRule{

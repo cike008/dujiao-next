@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// Generate 生成“前缀 + 秒级时间戳 + 六位随机数字”的业务流水号。
+// Generate 生成“前缀 + 秒级时间戳 + 十位密码学随机数字”的业务流水号。
 func Generate(prefix string) string {
-	return fmt.Sprintf("%s%s%s", strings.TrimSpace(prefix), time.Now().Format("20060102150405"), randomNumeric(6))
+	return fmt.Sprintf("%s%s%s", strings.TrimSpace(prefix), time.Now().Format("20060102150405"), randomNumeric(10))
 }
 
 func randomNumeric(length int) string {

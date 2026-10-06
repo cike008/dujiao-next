@@ -84,6 +84,7 @@ func registerStorefrontRoutes(
 
 	// 游客接口
 	guest := storefront.Group("/guest")
+	guest.Use(middleware.NoStoreMiddleware())
 	guestRead := guest.Group("")
 	guestRead.Use(middleware.RateLimitMiddleware(redisClient, guestReadRule, middleware.KeyByIP))
 	{
