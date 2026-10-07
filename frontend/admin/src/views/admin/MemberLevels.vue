@@ -5,6 +5,7 @@ import { adminAPI } from '@/api/admin'
 import type { AdminMemberLevel } from '@/api/types'
 import IdCell from '@/components/IdCell.vue'
 import MediaPicker from '@/components/admin/MediaPicker.vue'
+import MemberLevelPrices from '@/components/admin/MemberLevelPrices.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -24,6 +25,7 @@ const { t } = useI18n()
 const loading = ref(true)
 const { refreshing, refreshList } = useListRefresh()
 const levels = ref<AdminMemberLevel[]>([])
+const pricingLevel = ref<AdminMemberLevel | null>(null)
 const pagination = ref({
   page: 1,
   page_size: 50,
@@ -312,6 +314,7 @@ onMounted(() => {
             <TableCell class="min-w-[80px] px-6 py-4 text-right">
               <div class="flex flex-wrap items-center justify-end gap-2">
                 <Button size="sm" variant="outline" @click="openEditModal(level)">{{ t('admin.common.edit') }}</Button>
+                <Button size="sm" variant="outline" @click="pricingLevel = level">{{ t('admin.memberLevels.levelPrices.title') }}</Button>
                 <Button size="sm" variant="destructive" @click="handleDelete(level)">{{ t('admin.common.delete') }}</Button>
               </div>
             </TableCell>
@@ -320,6 +323,7 @@ onMounted(() => {
       </Table>
     </div>
 
+    <MemberLevelPrices v-if="pricingLevel" :level="pricingLevel" @close="pricingLevel = null" />
     <Dialog v-model:open="showModal" @update:open="(value: boolean) => { if (!value) closeModal() }">
       <DialogScrollContent class="w-[calc(100vw-1rem)] max-w-3xl p-4 sm:p-6" @interact-outside="(e: Event) => e.preventDefault()">
         <DialogHeader>

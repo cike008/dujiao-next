@@ -4121,6 +4121,8 @@ const messages = {
         default: '默认',
         levelPrices: {
           title: '等级专属定价',
+          search: '搜索商品', scope: '定价范围', productScope: '商品统一价', amount: '专属价格',
+          loadFailed: '加载商品或定价失败', invalidPrice: '请输入大于 0 且最多两位小数的价格', previous: '上一页', next: '下一页',
           subtitle: '为不同会员等级设置商品专属价格',
           empty: '暂无等级定价',
           saveSuccess: '等级定价已保存',
@@ -8572,6 +8574,8 @@ const messages = {
         default: '預設',
         levelPrices: {
           title: '等級專屬定價',
+          search: '搜尋商品', scope: '定價範圍', productScope: '商品統一價', amount: '專屬價格',
+          loadFailed: '載入商品或定價失敗', invalidPrice: '請輸入大於 0 且最多兩位小數的價格', previous: '上一頁', next: '下一頁',
           subtitle: '為不同會員等級設定商品專屬價格',
           empty: '暫無等級定價',
           saveSuccess: '等級定價已儲存',
@@ -13023,6 +13027,8 @@ const messages = {
         default: 'Default',
         levelPrices: {
           title: 'Level-Specific Pricing',
+          search: 'Search products', scope: 'Pricing scope', productScope: 'Product-wide price', amount: 'Exclusive price',
+          loadFailed: 'Failed to load products or prices', invalidPrice: 'Enter a positive price with at most two decimal places', previous: 'Previous page', next: 'Next page',
           subtitle: 'Set product-specific prices for different member levels',
           empty: 'No level pricing',
           saveSuccess: 'Level pricing saved',
