@@ -22,6 +22,7 @@ import (
 	resellertransport "github.com/dujiao-next/internal/modules/reseller/transport/http/user"
 	publicconfigtransport "github.com/dujiao-next/internal/modules/settings/transport/http/public"
 	wallettransport "github.com/dujiao-next/internal/modules/wallet/transport/http"
+	"github.com/dujiao-next/internal/shared/requestmeta"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -68,6 +69,10 @@ func registerStorefrontRoutes(
 ) {
 	storefront := apiV1.Group("")
 	storefront.Use(middleware.ResellerTenantMiddleware(c.ResellerDomainResolver))
+	storefront.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(requestmeta.WithUserAgent(c.Request.Context(), c.Request.UserAgent()))
+		c.Next()
+	})
 	affiliateHandler := affiliatebootstrap.NewStorefrontHandler(c)
 
 	// 公开接口

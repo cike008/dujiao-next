@@ -98,6 +98,7 @@ const (
 	PaymentInteractionQR       = "qr"
 	PaymentInteractionRedirect = "redirect"
 	PaymentInteractionWAP      = "wap"
+	PaymentInteractionAuto     = "auto"
 	PaymentInteractionPage     = "page"
 	PaymentInteractionBalance  = "balance"
 )

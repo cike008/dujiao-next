@@ -17,6 +17,7 @@ import (
 	walletcontract "github.com/dujiao-next/internal/modules/wallet/contract"
 	walletdomain "github.com/dujiao-next/internal/modules/wallet/domain"
 	"github.com/dujiao-next/internal/shared/money"
+	"github.com/dujiao-next/internal/shared/requestmeta"
 	"github.com/dujiao-next/internal/shared/serial"
 
 	"github.com/shopspring/decimal"
@@ -63,6 +64,7 @@ func (s *PaymentService) CreateWalletRechargePayment(input CreateWalletRechargeP
 	if !channel.IsActive {
 		return nil, ErrPaymentChannelInactive
 	}
+	channel = channel.ForDevice(requestmeta.IsMobile(input.Context))
 	if s.userRepo == nil {
 		return nil, ErrPaymentInvalid
 	}

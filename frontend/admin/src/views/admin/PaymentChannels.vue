@@ -204,6 +204,7 @@ const interactionModeLabel = (value?: string) => {
     qr: t('admin.paymentChannels.interactionModes.qr'),
     redirect: t('admin.paymentChannels.interactionModes.redirect'),
     wap: t('admin.paymentChannels.interactionModes.wap'),
+    auto: t('admin.paymentChannels.interactionModes.auto'),
     page: t('admin.paymentChannels.interactionModes.page'),
   }
   return map[value || ''] || value || '-'

@@ -21,10 +21,106 @@ import (
 	"github.com/dujiao-next/internal/shared/jsonmap"
 	"github.com/dujiao-next/internal/shared/jsonslice"
 	"github.com/dujiao-next/internal/shared/money"
+	"github.com/dujiao-next/internal/shared/requestmeta"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+func TestAlipayAutomaticModeSnapshotsAndReuse(t *testing.T) {
+	svc, db := setupPaymentServiceWalletTest(t)
+	channel := &paymentdomain.PaymentChannel{Name: "Auto Alipay", ProviderType: constants.PaymentProviderOfficial,
+		ChannelType: constants.PaymentChannelTypeAlipay, InteractionMode: constants.PaymentInteractionAuto,
+		ConfigJSON: jsonmap.JSON{}, IsActive: true}
+	if err := db.Create(channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	order := createUnderpaidOrder(t, db, "DJAUTOALIPAY", 0, 100)
+	var sentMode string
+	registerTestGateway(t, svc, channel.ProviderType, channel.ChannelType, emptyProviderRefProvider{onCreate: func(input paymentcontract.GatewayCreateInput) {
+		sentMode, _ = input.Extra["interaction_mode"].(string)
+	}})
+	desktop, err := svc.CreatePayment(CreatePaymentInput{OrderID: order.ID, ChannelID: channel.ID, Context: context.Background()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if desktop.Payment.InteractionMode != "qr" || sentMode != "qr" {
+		t.Fatal("desktop did not use QR")
+	}
+	mobileCtx := requestmeta.WithUserAgent(context.Background(), "iPhone Mobile")
+	mobile, err := svc.CreatePayment(CreatePaymentInput{OrderID: order.ID, ChannelID: channel.ID, Context: mobileCtx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mobile.Payment.ID == desktop.Payment.ID || mobile.Payment.InteractionMode != "wap" || sentMode != "wap" {
+		t.Fatal("mobile reused incompatible QR payment")
+	}
+	reused, err := svc.CreatePayment(CreatePaymentInput{OrderID: order.ID, ChannelID: channel.ID, Context: mobileCtx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Payment.ID != mobile.Payment.ID {
+		t.Fatal("same-device pending payment was not reused")
+	}
+	var stored paymentdomain.PaymentChannel
+	if err := db.First(&stored, channel.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.InteractionMode != "auto" {
+		t.Fatal("device resolution mutated channel configuration")
+	}
+	var previous paymentdomain.Payment
+	if err := db.First(&previous, desktop.Payment.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if previous.SupersededAt == nil {
+		t.Fatal("old payment link was not superseded")
+	}
+}
+
+func TestAlipayDeviceResolutionKeepsFixedAndOtherProviderModes(t *testing.T) {
+	for _, channel := range []*paymentdomain.PaymentChannel{
+		{ProviderType: "official", ChannelType: "alipay", InteractionMode: "qr"},
+		{ProviderType: "official", ChannelType: "alipay", InteractionMode: "wap"},
+		{ProviderType: "official", ChannelType: "alipay", InteractionMode: "page"},
+		{ProviderType: "official", ChannelType: "stripe", InteractionMode: "redirect"},
+	} {
+		if resolved := channel.ForDevice(true); resolved != channel {
+			t.Fatal("fixed mode changed")
+		}
+	}
+}
+
+func TestAlipayAutomaticWalletRechargeMode(t *testing.T) {
+	for _, mobile := range []bool{false, true} {
+		t.Run(map[bool]string{false: "desktop", true: "mobile"}[mobile], func(t *testing.T) {
+			svc, db := setupPaymentServiceWalletTest(t)
+			user := &userdomain.User{Email: "auto-recharge@example.com", PasswordHash: "hash", Status: constants.UserStatusActive}
+			if err := db.Create(user).Error; err != nil {
+				t.Fatal(err)
+			}
+			channel := &paymentdomain.PaymentChannel{Name: "Auto Alipay", ProviderType: constants.PaymentProviderOfficial, ChannelType: constants.PaymentChannelTypeAlipay, InteractionMode: constants.PaymentInteractionAuto, ConfigJSON: jsonmap.JSON{}, IsActive: true}
+			if err := db.Create(channel).Error; err != nil {
+				t.Fatal(err)
+			}
+			var sentMode string
+			registerTestGateway(t, svc, channel.ProviderType, channel.ChannelType, emptyProviderRefProvider{onCreate: func(input paymentcontract.GatewayCreateInput) { sentMode, _ = input.Extra["interaction_mode"].(string) }})
+			ctx := context.Background()
+			want := constants.PaymentInteractionQR
+			if mobile {
+				ctx = requestmeta.WithUserAgent(ctx, "iPhone Mobile")
+				want = constants.PaymentInteractionWAP
+			}
+			result, err := svc.CreateWalletRechargePayment(CreateWalletRechargePaymentInput{UserID: user.ID, ChannelID: channel.ID, Amount: money.FromDecimal(decimal.NewFromInt(100)), Currency: "CNY", Context: ctx})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Payment.InteractionMode != want || result.Recharge.InteractionMode != want || sentMode != want {
+				t.Fatal("recharge did not snapshot resolved device mode")
+			}
+		})
+	}
+}
 
 func TestValidateOrderChannelEligibilityUsesPersistedOrderIdentity(t *testing.T) {
 	levelID := uint(2)
