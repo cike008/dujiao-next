@@ -94,6 +94,7 @@ func (h *LatestHandler) GetGuestLatestPayment(c *gin.Context) {
 	order, err := h.guestOrders.GetOrderByGuestOrderNoForTenant(tenantFromRequest(c), query.OrderNo, email, password)
 	if err != nil {
 		if errors.Is(err, ErrGuestOrderNotFound) {
+			ginutil.MarkGuestLookupFailure(c)
 			ginutil.RespondError(c, response.CodeNotFound, "error.guest_order_not_found", nil)
 			return
 		}

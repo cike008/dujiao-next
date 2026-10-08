@@ -2,8 +2,12 @@ package httpserver
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	reseller "github.com/dujiao-next/internal/modules/reseller/contract"
+	"github.com/dujiao-next/internal/platform/http/ginutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -436,5 +440,51 @@ func TestUpdateAdminOrderRefundPaymentFeeSupportsHistoricalManualRefund(t *testi
 	items, ok := resp.Data["items"].([]interface{})
 	if !ok || len(items) == 0 {
 		t.Fatalf("items should not be empty: %+v", resp.Data["items"])
+	}
+}
+
+type guestQueryStub struct {
+	err   error
+	total int64
+}
+
+func (s guestQueryStub) ListOrdersByGuestForTenant(reseller.TenantContext, string, string, int, int) ([]orderdomain.Order, int64, error) {
+	return []orderdomain.Order{}, s.total, s.err
+}
+func (s guestQueryStub) GetOrderByGuestOrderNoForTenant(reseller.TenantContext, string, string, string) (*orderdomain.Order, error) {
+	return nil, s.err
+}
+func (s guestQueryStub) GetAnyOrderByGuestOrderNoForTenant(reseller.TenantContext, string, string, string) (*orderdomain.Order, error) {
+	return nil, s.err
+}
+
+func TestGuestHandlerFailureSignals(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		name, path string
+		query      guestQueryStub
+		failed     bool
+	}{
+		{"empty list", "/orders", guestQueryStub{}, true},
+		{"empty later page with matches", "/orders?page=2", guestQueryStub{total: 1}, false},
+		{"list database error", "/orders", guestQueryStub{err: errors.New("database failure")}, false},
+		{"list order miss", "/orders?order_no=missing", guestQueryStub{err: ordertransport.ErrGuestOrderNotFound}, true},
+		{"detail miss", "/orders/missing", guestQueryStub{err: ordertransport.ErrGuestOrderNotFound}, true},
+		{"detail database error", "/orders/missing", guestQueryStub{err: errors.New("database failure")}, false},
+		{"download miss", "/orders/missing/fulfillment/download", guestQueryStub{err: ordertransport.ErrGuestOrderNotFound}, true},
+		{"download database error", "/orders/missing/fulfillment/download", guestQueryStub{err: errors.New("database failure")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			marked := false
+			r := gin.New()
+			r.Use(func(c *gin.Context) { c.Next(); marked = ginutil.GuestLookupFailed(c) })
+			ordertransport.RegisterGuestReadRoutes(r, ordertransport.NewGuestHandler(tc.query, nil, nil))
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("Authorization", "Guest "+base64.RawURLEncoding.EncodeToString([]byte("test@example.com\nbad-password")))
+			r.ServeHTTP(httptest.NewRecorder(), req)
+			if marked != tc.failed {
+				t.Fatalf("failure marker=%v want %v", marked, tc.failed)
+			}
+		})
 	}
 }

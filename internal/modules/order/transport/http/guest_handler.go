@@ -52,6 +52,7 @@ func (h *GuestHandler) ListGuestOrders(c *gin.Context) {
 		order, err := h.orders.GetOrderByGuestOrderNoForTenant(tenantFromRequest(c), orderNo, email, password)
 		if err != nil {
 			if errors.Is(err, ErrGuestOrderNotFound) {
+				ginutil.MarkGuestLookupFailure(c)
 				pagination := response.Pagination{
 					Page:      1,
 					PageSize:  1,
@@ -82,6 +83,9 @@ func (h *GuestHandler) ListGuestOrders(c *gin.Context) {
 		return
 	}
 	pagination := response.BuildPagination(page, pageSize, total)
+	if total == 0 {
+		ginutil.MarkGuestLookupFailure(c)
+	}
 	response.SuccessWithPage(c, orderpresenter.NewOrderSummaryList(orders), pagination)
 }
 
@@ -104,6 +108,7 @@ func (h *GuestHandler) GetGuestOrderByOrderNo(c *gin.Context) {
 	order, err := h.orders.GetOrderByGuestOrderNoForTenant(tenantFromRequest(c), orderNo, email, password)
 	if err != nil {
 		if errors.Is(err, ErrGuestOrderNotFound) {
+			ginutil.MarkGuestLookupFailure(c)
 			ginutil.RespondError(c, response.CodeNotFound, "error.guest_order_not_found", nil)
 			return
 		}
@@ -132,6 +137,7 @@ func (h *GuestHandler) DownloadGuestFulfillment(c *gin.Context) {
 	order, err := h.orders.GetAnyOrderByGuestOrderNoForTenant(tenantFromRequest(c), orderNo, email, password)
 	if err != nil {
 		if errors.Is(err, ErrGuestOrderNotFound) {
+			ginutil.MarkGuestLookupFailure(c)
 			ginutil.RespondError(c, response.CodeNotFound, "error.guest_order_not_found", nil)
 			return
 		}
@@ -139,6 +145,7 @@ func (h *GuestHandler) DownloadGuestFulfillment(c *gin.Context) {
 		return
 	}
 	if order == nil {
+		ginutil.MarkGuestLookupFailure(c)
 		ginutil.RespondError(c, response.CodeNotFound, "error.guest_order_not_found", nil)
 		return
 	}

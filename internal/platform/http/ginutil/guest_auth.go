@@ -10,7 +10,17 @@ import (
 const (
 	guestAuthorizationScheme  = "Guest "
 	maxGuestAuthorizationSize = 4096
+	guestLookupFailureKey     = "guest_lookup_failed"
 )
+
+// MarkGuestLookupFailure records an unmatched guest credential lookup, not a database failure.
+func MarkGuestLookupFailure(c *gin.Context) {
+	c.Set(guestLookupFailureKey, true)
+}
+
+func GuestLookupFailed(c *gin.Context) bool {
+	return c.GetBool(guestLookupFailureKey)
+}
 
 // GetGuestCredentials 从 Authorization: Guest <base64url(email\\npassword)> 读取游客订单凭证。
 // 凭证不再接受 URL 查询参数，避免进入代理访问日志、浏览器历史和 Referer。

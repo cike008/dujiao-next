@@ -85,8 +85,10 @@ func registerStorefrontRoutes(
 	// 游客接口
 	guest := storefront.Group("/guest")
 	guest.Use(middleware.NoStoreMiddleware())
+	guestFailureLimit := middleware.GuestLookupFailureMiddleware(redisClient, guestReadRule.Prefix+":failures", cfg.App.SecretKey)
 	guestRead := guest.Group("")
 	guestRead.Use(middleware.RateLimitMiddleware(redisClient, guestReadRule, middleware.KeyByIP))
+	guestRead.Use(guestFailureLimit)
 	{
 		ordertransport.RegisterGuestPreviewRoute(guestRead, orderPreviewHandler)
 		ordertransport.RegisterGuestReadRoutes(guestRead, guestOrderHandler)
@@ -94,6 +96,7 @@ func registerStorefrontRoutes(
 	}
 	guestWrite := guest.Group("")
 	guestWrite.Use(middleware.RateLimitMiddleware(redisClient, guestWriteRule, middleware.KeyByIP))
+	guestWrite.Use(guestFailureLimit)
 	{
 		ordertransport.RegisterGuestCreateRoute(guestWrite, orderCreateHandler)
 		ordertransport.RegisterGuestCreateAndPayRoute(guestWrite, orderCreateHandler)

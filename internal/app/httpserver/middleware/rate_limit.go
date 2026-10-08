@@ -2,9 +2,15 @@ package middleware
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	reseller "github.com/dujiao-next/internal/modules/reseller/contract"
+	"github.com/dujiao-next/internal/platform/http/ginutil"
 	"io"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -330,5 +336,119 @@ func toInt64(value interface{}) (int64, bool) {
 		return int64(v), true
 	default:
 		return 0, false
+	}
+}
+
+var guestFailureReadScript = redis.NewScript(`
+return {tonumber(redis.call("GET", KEYS[1]) or "0"), redis.call("TTL", KEYS[1])}
+`)
+
+// GuestLookupFailureMiddleware shares failure counters across IPs and guest endpoints.
+// Successful lookups do not reset counters: one known order must not unlock guesses
+// at other orders using the same email. A short cooldown bounds targeted lockouts.
+func GuestLookupFailureMiddleware(client *redis.Client, prefix, secret string) gin.HandlerFunc {
+	g := &guestLookupGuard{
+		client: client, secret: secret, now: time.Now,
+		rule: RateLimitRule{Prefix: prefix, WindowSeconds: 300, MaxRequests: 10, BlockSeconds: 60},
+	}
+	return g.handle
+}
+
+type guestLookupGuard struct {
+	client *redis.Client
+	secret string
+	rule   RateLimitRule
+	local  localRateLimiter
+	now    func() time.Time
+}
+
+func (g *guestLookupGuard) key(c *gin.Context, email string) string {
+	tenantID := uint(0)
+	if tenant, ok := reseller.TenantFromContext(c.Request.Context()); ok && tenant.IsReseller() {
+		tenantID = *tenant.ResellerID
+	}
+	mac := hmac.New(sha256.New, []byte(g.secret))
+	fmt.Fprintf(mac, "guest-lookup:%d:%s", tenantID, strings.ToLower(strings.TrimSpace(email)))
+	return fmt.Sprintf("%s:%x", g.rule.Prefix, mac.Sum(nil))
+}
+
+func (g *guestLookupGuard) localCount(key string, now time.Time) (int64, int64) {
+	g.local.mu.Lock()
+	defer g.local.mu.Unlock()
+	entry, ok := g.local.entries[key]
+	if ok && now.Before(entry.expiresAt) {
+		return entry.count, max(int64(1), int64(entry.expiresAt.Sub(now).Seconds()))
+	}
+	delete(g.local.entries, key)
+	if len(g.local.entries) >= localRateLimitMaxEntries {
+		for k, e := range g.local.entries {
+			if !now.Before(e.expiresAt) {
+				delete(g.local.entries, k)
+			}
+		}
+		if len(g.local.entries) >= localRateLimitMaxEntries {
+			return int64(g.rule.MaxRequests), int64(g.rule.BlockSeconds)
+		}
+	}
+	return 0, 0
+}
+
+func (g *guestLookupGuard) warnFallback(now time.Time, err error) {
+	if g.local.shouldWarnRedisFallback(now) {
+		logger.Warnw("guest_lookup_limit_redis_fallback", "prefix", g.rule.Prefix, "error", err)
+	}
+}
+
+func (g *guestLookupGuard) handle(c *gin.Context) {
+	email, _, ok := ginutil.GetGuestCredentials(c)
+	if !ok {
+		c.Next()
+		return
+	}
+	key, now := g.key(c, email), g.now()
+	count, ttl := g.localCount(key, now)
+	if g.client != nil {
+		result, err := guestFailureReadScript.Run(c.Request.Context(), g.client, []string{key}).Slice()
+		if err != nil {
+			g.warnFallback(now, err)
+		} else if len(result) == 2 {
+			remoteCount, valid := toInt64(result[0])
+			remoteTTL, validTTL := toInt64(result[1])
+			if !valid || !validTTL {
+				g.warnFallback(now, fmt.Errorf("invalid counter result"))
+			} else if remoteCount >= int64(g.rule.MaxRequests) && remoteTTL > 0 {
+				count, ttl = remoteCount, remoteTTL
+			}
+		} else {
+			g.warnFallback(now, fmt.Errorf("invalid counter result shape"))
+		}
+	}
+	if count >= int64(g.rule.MaxRequests) {
+		wait := int(max(int64(1), ttl))
+		c.Header("Retry-After", strconv.Itoa(wait))
+		msg := i18n.Sprintf(i18n.ResolveLocale(c), "error.rate_limited", wait)
+		response.ErrorWithHTTPStatus(c, http.StatusTooManyRequests, response.CodeTooManyRequests, msg)
+		c.Abort()
+		return
+	}
+	c.Next()
+	if !ginutil.GuestLookupFailed(c) {
+		return
+	}
+	// Reuse the atomic rate counter, which starts its cooldown at MaxRequests+1.
+	failureRule := g.rule
+	failureRule.MaxRequests--
+	now = g.now()
+	_, _, capacityWarning := g.local.increment(key, failureRule, now)
+	if capacityWarning {
+		logger.Warnw("guest_lookup_limit_local_capacity_exhausted", "prefix", g.rule.Prefix)
+	}
+	// Mirror failures locally even while Redis is healthy, so an outage cannot
+	// immediately discard this instance's observed failures.
+	if g.client != nil {
+		if _, err := rateLimitScript.Run(c.Request.Context(), g.client, []string{key},
+			failureRule.WindowSeconds, failureRule.MaxRequests, failureRule.BlockSeconds).Result(); err != nil {
+			g.warnFallback(now, err)
+		}
 	}
 }
