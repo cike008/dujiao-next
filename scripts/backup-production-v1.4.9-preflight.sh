@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 HOST="${1:-dujiao-vps}"
 REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.9-preflight-backup.sh"
@@ -10,6 +11,7 @@ echo "Uploading pre-upgrade backup helper to ${HOST}:${REMOTE_SCRIPT}..."
 ssh "$HOST" "cat > '$REMOTE_SCRIPT' && chmod 700 '$REMOTE_SCRIPT'" <<'REMOTE'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This backup helper must run with sudo/root on the VPS." >&2
@@ -21,7 +23,7 @@ TS="$(date +%Y%m%d%H%M%S)"
 BACKUP_DIR="/opt/backups/dujiao-next-v1.4.9-preflight-${TS}"
 
 echo "backup_dir=${BACKUP_DIR}"
-install -d -m 750 "$BACKUP_DIR"
+install -d -m 700 "$BACKUP_DIR"
 
 echo "--- capture runtime inventory ---"
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' | tee "$BACKUP_DIR/docker-ps.txt" >/dev/null
@@ -37,10 +39,10 @@ if [ -d /opt/dujiao-next ]; then
 fi
 
 echo "--- copy dujiao config files ---"
-install -d -m 750 "$BACKUP_DIR/dujiao-next"
+install -d -m 700 "$BACKUP_DIR/dujiao-next"
 for file in /opt/dujiao-next/.env /opt/dujiao-next/docker-compose.yml /opt/dujiao-next/config/config.yml; do
   if [ -f "$file" ]; then
-    cp -a "$file" "$BACKUP_DIR/dujiao-next/"
+    install -m 600 "$file" "$BACKUP_DIR/dujiao-next/"
   fi
 done
 

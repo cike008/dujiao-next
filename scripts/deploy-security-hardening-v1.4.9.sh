@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 APP_DIR="${APP_DIR:-/opt/dujiao-next}"
 SERVICE="${SERVICE:-dujiaonext}"
@@ -40,15 +41,17 @@ docker image inspect "$NEW_IMAGE" >/dev/null
 docker inspect "$CONTAINER" --format '{{.State.Health.Status}}' | grep -qx healthy
 
 mkdir -p "$BACKUP_DIR" "$ROLLOUT_DIR"
-cp "$COMPOSE_FILE" "$COMPOSE_BACKUP"
-cp "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.yml"
-cp "$APP_DIR/.env" "$BACKUP_DIR/.env"
-cp "$APP_DIR/config/config.yml" "$BACKUP_DIR/config.yml"
+chmod 0700 "$BACKUP_DIR" "$ROLLOUT_DIR"
+install -m 0600 "$COMPOSE_FILE" "$COMPOSE_BACKUP"
+install -m 0600 "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.yml"
+install -m 0600 "$APP_DIR/.env" "$BACKUP_DIR/.env"
+install -m 0600 "$APP_DIR/config/config.yml" "$BACKUP_DIR/config.yml"
 
 echo "Creating a PostgreSQL backup."
 docker exec "$POSTGRES_CONTAINER" sh -ec \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
   >"$BACKUP_DIR/postgres.dump"
+chmod 0600 "$BACKUP_DIR/postgres.dump"
 test -s "$BACKUP_DIR/postgres.dump"
 docker exec -i "$POSTGRES_CONTAINER" sh -ec \
   'pg_restore --list >/dev/null' <"$BACKUP_DIR/postgres.dump"

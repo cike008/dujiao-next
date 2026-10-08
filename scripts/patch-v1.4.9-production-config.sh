@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 HOST="${1:-dujiao-vps}"
 REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.9-patch-production-config.sh"
@@ -10,6 +11,7 @@ echo "Uploading production config patch helper to ${HOST}:${REMOTE_SCRIPT}..."
 ssh "$HOST" "cat > '$REMOTE_SCRIPT' && chmod 700 '$REMOTE_SCRIPT'" <<'REMOTE'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This config patch helper must run with sudo/root on the VPS." >&2
@@ -37,7 +39,7 @@ if [ "$ADMIN_PATH" = "/" ] || [ "$ADMIN_PATH" = "/admin" ]; then
 fi
 
 BACKUP_FILE="${CONFIG_FILE}.bak-v141-config-$(date +%Y%m%d%H%M%S)"
-cp -a "$CONFIG_FILE" "$BACKUP_FILE"
+install -m 600 "$CONFIG_FILE" "$BACKUP_FILE"
 
 APP_SECRET="$(openssl rand -hex 32)"
 

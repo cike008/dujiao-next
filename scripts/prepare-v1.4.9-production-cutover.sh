@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 HOST="${1:-dujiao-vps}"
 REMOTE_SCRIPT="/tmp/dujiao-next-v1.4.9-production-cutover.sh"
@@ -10,6 +11,7 @@ echo "Uploading production cutover helper to ${HOST}:${REMOTE_SCRIPT}..."
 ssh "$HOST" "cat > '$REMOTE_SCRIPT' && chmod 700 '$REMOTE_SCRIPT'" <<'REMOTE'
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This cutover helper must run with sudo/root on the VPS." >&2
@@ -77,10 +79,10 @@ echo
 
 docker image inspect "$IMAGE_TAG" >/dev/null
 
-install -d -m 750 "$CUTOVER_DIR"
-cp -a "$COMPOSE_FILE" "$CUTOVER_DIR/docker-compose.yml.before"
-cp -a "$SHARE_NGINX" "$CUTOVER_DIR/share.aimosh.com.before"
-cp -a "$ADMIN_NGINX" "$CUTOVER_DIR/moshskmgr.aimosh.com.before"
+install -d -m 700 "$CUTOVER_DIR"
+install -m 600 "$COMPOSE_FILE" "$CUTOVER_DIR/docker-compose.yml.before"
+install -m 600 "$SHARE_NGINX" "$CUTOVER_DIR/share.aimosh.com.before"
+install -m 600 "$ADMIN_NGINX" "$CUTOVER_DIR/moshskmgr.aimosh.com.before"
 
 python3 - "$COMPOSE_FILE" "$CUTOVER_DIR/docker-compose.yml.candidate" "$IMAGE_TAG" <<'PY'
 import pathlib
