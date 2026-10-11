@@ -276,7 +276,7 @@ const showAnnouncementIfNeeded = () => {
 const loadProducts = async () => {
   productsLoading.value = true
   try {
-    const res = await productAPI.list({ page: 1, page_size: 15 })
+    const res = await productAPI.list({ page: 1, page_size: 20 })
     products.value = res.data.data || []
   } catch (err) {
     console.error('Failed to load products:', err)

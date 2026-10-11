@@ -120,7 +120,7 @@ const {
   clearSearch,
   initialize,
   cleanup,
-} = useProductList({ pageSize: 12, homeRouteName: 'products' })
+} = useProductList({ pageSize: 20, homeRouteName: 'products' })
 
 const catName = (cat: PublicCategory) => getLocalizedText(cat.name) || cat.slug || ''
 

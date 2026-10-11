@@ -478,7 +478,7 @@ const goToPost = (slug: string) => {
 
 const loadFeaturedProducts = async () => {
   try {
-    const response = await productAPI.list({ page: 1, page_size: 15 })
+    const response = await productAPI.list({ page: 1, page_size: 20 })
     products.value = response.data.data || []
   } catch (error) {
     console.error('Failed to load products:', error)
