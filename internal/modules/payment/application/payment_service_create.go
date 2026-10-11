@@ -17,7 +17,6 @@ import (
 	"github.com/dujiao-next/internal/constants"
 	walletcontract "github.com/dujiao-next/internal/modules/wallet/contract"
 	"github.com/dujiao-next/internal/shared/money"
-	"github.com/dujiao-next/internal/shared/requestmeta"
 
 	"github.com/shopspring/decimal"
 )
@@ -122,7 +121,7 @@ func (s *PaymentService) CreatePayment(input CreatePaymentInput) (*CreatePayment
 				if resolvedFeeRate.LessThan(decimal.Zero) || resolvedFeeRate.GreaterThan(decimal.NewFromInt(100)) {
 					return ErrPaymentChannelConfigInvalid
 				}
-				channel = resolvedChannel.ForDevice(requestmeta.IsMobile(input.Context))
+				channel = resolvedChannel
 				feeRate = resolvedFeeRate
 			}
 			if err := validateOrderChannelEligibility(*channel, &lockedOrder); err != nil {
@@ -142,7 +141,7 @@ func (s *PaymentService) CreatePayment(input CreatePaymentInput) (*CreatePayment
 			if err != nil {
 				return ErrPaymentCreateFailed
 			}
-			if existing != nil && existing.InteractionMode == channel.InteractionMode && hasProviderResult(existing) {
+			if existing != nil && hasProviderResult(existing) {
 				legacyFeePayment := existing.FeeAmount.Decimal.IsPositive() &&
 					(existing.FeePolicy == "" || existing.FeePolicy == constants.PaymentFeePolicyLegacyCustomerSurcharge)
 				if !legacyFeePayment || feeConfig.ReuseLegacyOrderFeePayment {

@@ -75,13 +75,6 @@ func TestAlipayAdapter_ValidateConfig_ValidConfig_C3Regression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateConfig() should pass valid alipay config with QR mode, got: %v", err)
 	}
-	if err := a.ValidateConfig(raw, constants.PaymentInteractionAuto); err == nil {
-		t.Fatal("auto mode must require WAP return URL")
-	}
-	raw["return_url"] = "https://example.com/pay"
-	if err := a.ValidateConfig(raw, constants.PaymentInteractionAuto); err != nil {
-		t.Fatalf("auto configuration rejected: %v", err)
-	}
 }
 
 // TestAlipayAdapter_ValidateConfig_EmptyInteractionModeUsesDefault 验证修复后

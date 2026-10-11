@@ -69,10 +69,6 @@ func (a *alipayAdapter) ValidateConfig(raw jsonmap.JSON, interactionMode string)
 	if mode == "" {
 		mode = constants.PaymentInteractionQR
 	}
-	if mode == constants.PaymentInteractionAuto {
-		// Auto includes WAP, so require its return URL during channel configuration.
-		mode = constants.PaymentInteractionWAP
-	}
 	_, err := a.parseConfig(raw, mode)
 	return err
 }

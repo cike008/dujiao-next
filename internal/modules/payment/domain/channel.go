@@ -3,7 +3,6 @@ package domain
 import (
 	"time"
 
-	"github.com/dujiao-next/internal/constants"
 	"github.com/dujiao-next/internal/shared/jsonmap"
 	"github.com/dujiao-next/internal/shared/jsonslice"
 	"github.com/dujiao-next/internal/shared/money"
@@ -36,17 +35,4 @@ type PaymentChannel struct {
 // TableName 指定表名
 func (PaymentChannel) TableName() string {
 	return "payment_channels"
-}
-
-// ForDevice resolves automatic presentation without mutating the stored channel.
-func (channel *PaymentChannel) ForDevice(mobile bool) *PaymentChannel {
-	if channel == nil || channel.ProviderType != constants.PaymentProviderOfficial || channel.ChannelType != constants.PaymentChannelTypeAlipay || channel.InteractionMode != constants.PaymentInteractionAuto {
-		return channel
-	}
-	resolved := *channel
-	resolved.InteractionMode = constants.PaymentInteractionQR
-	if mobile {
-		resolved.InteractionMode = constants.PaymentInteractionWAP
-	}
-	return &resolved
 }

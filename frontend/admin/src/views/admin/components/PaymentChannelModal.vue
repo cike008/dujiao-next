@@ -311,7 +311,6 @@ const interactionModeOptions = computed(() => {
   if (form.provider_type === 'official' && form.channel_type === 'alipay') {
     return [
       { value: 'qr', label: 'admin.paymentChannels.interactionModes.qr' },
-      { value: 'auto', label: 'admin.paymentChannels.interactionModes.auto' },
       { value: 'wap', label: 'admin.paymentChannels.interactionModes.wap' },
       { value: 'page', label: 'admin.paymentChannels.interactionModes.page' },
     ]
