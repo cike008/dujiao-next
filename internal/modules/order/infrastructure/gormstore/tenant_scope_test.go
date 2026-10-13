@@ -105,6 +105,16 @@ func TestOrderRepositoryTenantScopePointQueriesAndLists(t *testing.T) {
 		t.Fatalf("GetByOrderNoAndUserScoped main failed: %v", err)
 	}
 	assertOrderFound(t, got, mainOrder.OrderNo)
+	got, err = repo.GetByOrderNoAndUserScoped(mainOrder.OrderNo, user.ID+1, mainScope)
+	if err != nil {
+		t.Fatalf("query main order as another user failed: %v", err)
+	}
+	assertOrderMissing(t, got)
+	got, err = repo.GetByIDAndUserScoped(mainOrder.ID, user.ID+1, mainScope)
+	if err != nil {
+		t.Fatalf("query main order ID as another user failed: %v", err)
+	}
+	assertOrderMissing(t, got)
 	got, err = repo.GetByOrderNoAndUserScoped(mainOrder.OrderNo, user.ID, resellerOneScope)
 	if err != nil {
 		t.Fatalf("GetByOrderNoAndUserScoped main from reseller failed: %v", err)
@@ -132,6 +142,11 @@ func TestOrderRepositoryTenantScopePointQueriesAndLists(t *testing.T) {
 		t.Fatalf("GetAnyByOrderNoAndUserScoped child failed: %v", err)
 	}
 	assertOrderFound(t, got, "SCOPE-R1-CHILD")
+	got, err = repo.GetAnyByOrderNoAndUserScoped("SCOPE-R1-CHILD", user.ID+1, resellerOneScope)
+	if err != nil {
+		t.Fatalf("query child order as another user failed: %v", err)
+	}
+	assertOrderMissing(t, got)
 	got, err = repo.GetAnyByOrderNoAndUserScoped("SCOPE-R1-CHILD", user.ID, mainScope)
 	if err != nil {
 		t.Fatalf("GetAnyByOrderNoAndUserScoped child from main failed: %v", err)
