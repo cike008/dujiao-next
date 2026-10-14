@@ -107,9 +107,8 @@ services:
   backend:
     image: "$IMAGE_TAG"
     container_name: dujiaonext-v150-staging
+    command: ["./dujiao-next", "-mode", "api"]
     depends_on: [postgres, redis]
-    ports:
-      - "127.0.0.1:18081:8080"
     volumes:
       - ./config/config.yml:/app/config.yml:ro
       - ./data/uploads:/app/uploads
@@ -124,12 +123,12 @@ cd "$STAGE_DIR"
 docker compose config -q
 docker compose up -d postgres redis
 for _ in $(seq 1 60); do
-  if docker exec dujiaonext-postgres-v150-staging pg_isready -U dujiao -d dujiao >/dev/null 2>&1; then
+  if docker exec dujiaonext-postgres-v150-staging pg_isready -h 127.0.0.1 -U dujiao -d dujiao >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
-docker exec dujiaonext-postgres-v150-staging pg_isready -U dujiao -d dujiao
+docker exec dujiaonext-postgres-v150-staging pg_isready -h 127.0.0.1 -U dujiao -d dujiao
 
 echo 'Restoring backup into isolated PostgreSQL (transactional, fail-fast).'
 docker exec -i dujiaonext-postgres-v150-staging pg_restore -U dujiao -d dujiao --no-owner --no-privileges --single-transaction --exit-on-error < "$BACKUP_DIR/postgres-dujiao.dump"
@@ -142,13 +141,13 @@ counts() {
 counts > counts-before.txt
 docker compose up -d backend
 for _ in $(seq 1 90); do
-  if curl -fsS --max-time 3 http://127.0.0.1:18081/health >/dev/null 2>&1; then
+  if docker exec dujiaonext-v150-staging wget -qO- -T 3 http://127.0.0.1:8080/health >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
-curl -fsS --max-time 10 http://127.0.0.1:18081/health
-curl -fsS --max-time 10 http://127.0.0.1:18081/api/v1/public/config > public-config.json
+docker exec dujiaonext-v150-staging wget -qO- -T 10 http://127.0.0.1:8080/health
+docker exec dujiaonext-v150-staging wget -qO- -T 10 http://127.0.0.1:8080/api/v1/public/config > public-config.json
 grep -Fq "\"app_version\":\"$EXPECTED_VERSION\"" public-config.json
 counts > counts-after.txt
 diff -u counts-before.txt counts-after.txt
@@ -157,7 +156,7 @@ columns="$(docker exec dujiaonext-postgres-v150-staging psql -U dujiao -d dujiao
 [[ "$columns" == 3 ]]
 echo
 echo 'migration_columns=3/3; core_table_row_counts=unchanged'
-echo 'Staging ready: http://127.0.0.1:18081/staging-admin-v150/'
+echo 'Staging ready (internal network only).'
 echo 'Queue and TeamGenie disabled; Docker network has no external egress.'
 echo "staging_dir=$STAGE_DIR"
 echo 'Production was not modified. Keep staging private; it contains customer data.'
