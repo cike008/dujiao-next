@@ -21,6 +21,8 @@ type ManagementService interface {
 	GetUserManagementSnapshot(userID uint) (*resellerdomain.Profile, []resellerdomain.Domain, bool, error)
 	ApplyUserReseller(userID uint, input resellermodule.ResellerApplyInput) (*resellerdomain.Profile, error)
 	SubmitUserCustomDomain(userID uint, rawDomain string) (*resellerdomain.Domain, error)
+	SubmitUserSystemDomain(userID uint, prefix string) (*resellerdomain.Domain, error)
+	SystemDomainPolicy() (string, string)
 }
 
 type SiteConfigService interface {
@@ -89,6 +91,34 @@ func (h *UserHandler) GetManagementSnapshot(c *gin.Context) {
 		return
 	}
 	response.Success(c, dto.NewResellerManagementSnapshotResp(profile, domains, canApply))
+}
+
+func (h *UserHandler) GetDomainPolicy(c *gin.Context) {
+	if _, ok := ginutil.GetUserID(c); !ok {
+		return
+	}
+	base, suffix := h.management.SystemDomainPolicy()
+	response.Success(c, gin.H{"base": base, "suffix": suffix})
+}
+
+func (h *UserHandler) SubmitSystemDomain(c *gin.Context) {
+	uid, ok := ginutil.GetUserID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Prefix string `json:"prefix" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	row, err := h.management.SubmitUserSystemDomain(uid, req.Prefix)
+	if err != nil {
+		respondUserManagementError(c, err, "error.save_failed")
+		return
+	}
+	response.Success(c, dto.NewResellerDomainResp(row))
 }
 
 // ApplyProfile 提交当前用户的分销商申请。

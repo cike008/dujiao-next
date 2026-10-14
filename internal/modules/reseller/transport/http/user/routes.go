@@ -12,6 +12,8 @@ func RegisterUserConsoleRoutes(console gin.IRoutes, handler *UserHandler) {
 	console.POST("/apply", handler.ApplyProfile)
 	console.GET("/domains", handler.ListDomains)
 	console.POST("/domains", handler.SubmitCustomDomain)
+	console.GET("/domain-policy", handler.GetDomainPolicy)
+	console.POST("/system-domain-requests", handler.SubmitSystemDomain)
 	console.GET("/site-config", handler.GetSiteConfig)
 	console.PUT("/site-config", handler.UpdateSiteConfig)
 	console.POST("/upload", handler.UploadImage)

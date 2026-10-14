@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,7 +221,16 @@ func TestResellerManagementSubmitAndApproveCustomDomain(t *testing.T) {
 		t.Fatalf("approve profile failed: %v", err)
 	}
 
-	domain, err := svc.SubmitUserCustomDomain(user.ID, "Shop.Customer.Example:443")
+	for _, input := range []string{"gpt", "localhost", "127.0.0.1", "https://shop.customer.com", "Shop.Customer.Example:443", "*.customer.com", "shop.customer.com/path", "shop .customer.com", "-shop.customer.com", "shop..customer.com", strings.Repeat("a", 64) + ".customer.com"} {
+		if _, err := svc.SubmitUserCustomDomain(user.ID, input); !errors.Is(err, resellercontract.ErrDomainInvalid) {
+			t.Fatalf("invalid domain %q should be rejected, got %v", input, err)
+		}
+	}
+	var count int64
+	if err := db.Model(&resellerdomain.Domain{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("invalid domain submissions must not create bindings: count=%d err=%v", count, err)
+	}
+	domain, err := svc.SubmitUserCustomDomain(user.ID, "Shop.Customer.Example")
 	if err != nil {
 		t.Fatalf("SubmitUserCustomDomain failed: %v", err)
 	}
@@ -233,6 +244,65 @@ func TestResellerManagementSubmitAndApproveCustomDomain(t *testing.T) {
 	}
 	if approved.Status != resellerdomain.DomainStatusActive || approved.VerificationStatus != resellerdomain.DomainVerificationVerified || approved.VerifiedAt == nil {
 		t.Fatalf("unexpected approved domain: %+v", approved)
+	}
+}
+
+func TestResellerManagementSystemDomainRequestStaysPendingUntilApproval(t *testing.T) {
+	db := openResellerManagementServiceTestDB(t)
+	user := seedResellerManagementUser(t, db, "platform-domain@example.test")
+	svc := NewResellerManagementService(resellergormstore.New(db), config.ResellerConfig{
+		Enabled: true, SelfApplyEnabled: true, SubdomainBase: "moshshop.com", SubdomainSuffix: "ai",
+	})
+	profile, err := svc.ApplyUserReseller(user.ID, ResellerApplyInput{Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SubmitUserSystemDomain(user.ID, "gpt"); !errors.Is(err, ErrResellerProfileInactive) {
+		t.Fatalf("unapproved profile should be rejected: %v", err)
+	}
+	if _, err := svc.ApproveProfile(context.Background(), 9, profile.ID, ResellerApproveInput{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, prefix := range []string{"https://gpt", "gpt.moshshop.com", "gpt:443", "ai", "-gpt", "gpt-", "gpt name", "admin", "www"} {
+		if _, err := svc.SubmitUserSystemDomain(user.ID, prefix); err == nil {
+			t.Fatalf("invalid/reserved prefix accepted: %q", prefix)
+		}
+	}
+	base, suffix := svc.SystemDomainPolicy()
+	if base != "moshshop.com" || suffix != "ai" {
+		t.Fatalf("unexpected policy %s %s", base, suffix)
+	}
+	row, err := svc.SubmitUserSystemDomain(user.ID, "GPT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Domain != "gptai.moshshop.com" || row.Type != resellerdomain.DomainTypeSubdomain || row.Status != resellerdomain.DomainStatusPendingReview || row.VerificationStatus != resellerdomain.DomainVerificationPending || row.IsPrimary {
+		t.Fatalf("request must stay pending: %+v", row)
+	}
+	repo := resellergormstore.New(db)
+	if active, err := repo.FindActiveVerifiedDomain(row.Domain); err != nil || active != nil {
+		t.Fatalf("pending domain must not resolve: %v %+v", err, active)
+	}
+	if _, err := svc.SubmitUserSystemDomain(user.ID, "gptai"); !errors.Is(err, resellercontract.ErrDomainConflict) {
+		t.Fatalf("duplicate must conflict: %v", err)
+	}
+	approved, err := svc.ApproveDomain(context.Background(), 9, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Status != resellerdomain.DomainStatusActive || !approved.IsPrimary {
+		t.Fatalf("admin approval failed: %+v", approved)
+	}
+	other := seedResellerManagementUser(t, db, "other-platform@example.test")
+	otherProfile, err := svc.ApplyUserReseller(other.ID, ResellerApplyInput{Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ApproveProfile(context.Background(), 9, otherProfile.ID, ResellerApproveInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SubmitUserSystemDomain(other.ID, "gpt"); !errors.Is(err, resellercontract.ErrDomainConflict) {
+		t.Fatalf("other reseller must not claim bound domain: %v", err)
 	}
 }
 

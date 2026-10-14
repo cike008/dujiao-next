@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"net"
 	"strings"
 	"time"
 
@@ -320,6 +321,38 @@ func (s *ManagementService) SubmitUserCustomDomain(userID uint, rawDomain string
 	if s == nil || s.store == nil || userID == 0 {
 		return nil, productcontract.ErrNotFound
 	}
+	domain, err := normalizeAndValidateCustomDomain(rawDomain, s.cfg)
+	if err != nil {
+		return nil, err
+	}
+	return s.submitUserDomain(userID, domain, resellerdomain.DomainTypeCustom)
+}
+
+func (s *ManagementService) SystemDomainPolicy() (string, string) {
+	if s == nil || !s.cfg.Enabled {
+		return "", ""
+	}
+	return resellercontract.NormalizeHost(s.cfg.SubdomainBase), strings.ToLower(strings.TrimSpace(s.cfg.SubdomainSuffix))
+}
+
+func (s *ManagementService) SubmitUserSystemDomain(userID uint, prefix string) (*resellerdomain.Domain, error) {
+	if s == nil || !s.cfg.Enabled {
+		return nil, resellercontract.ErrApplyDisabled
+	}
+	if !isValidResellerSubdomainLabel(strings.ToLower(strings.TrimSpace(prefix))) {
+		return nil, resellercontract.ErrDomainInvalid
+	}
+	domain, err := normalizeAndValidateSystemSubdomain(prefix, s.cfg.SubdomainBase, s.cfg)
+	if err != nil {
+		return nil, err
+	}
+	return s.submitUserDomain(userID, domain, resellerdomain.DomainTypeSubdomain)
+}
+
+func (s *ManagementService) submitUserDomain(userID uint, domain, domainType string) (*resellerdomain.Domain, error) {
+	if s == nil || s.store == nil || userID == 0 {
+		return nil, productcontract.ErrNotFound
+	}
 	profile, err := s.store.GetProfileByUserID(userID)
 	if err != nil {
 		return nil, err
@@ -330,15 +363,11 @@ func (s *ManagementService) SubmitUserCustomDomain(userID uint, rawDomain string
 	if profile.Status != resellerdomain.ProfileStatusActive {
 		return nil, resellercontract.ErrProfileInactive
 	}
-	domain, err := normalizeAndValidateCustomDomain(rawDomain, s.cfg)
-	if err != nil {
-		return nil, err
-	}
-	// 暂不启用 DNS 自动校验，自定义域名走后台人工审核。
+	// Both domain types remain unavailable until an administrator approves them.
 	row, err := s.store.UpsertDomain(resellerdomain.Domain{
 		ResellerID:         profile.ID,
 		Domain:             domain,
-		Type:               resellerdomain.DomainTypeCustom,
+		Type:               domainType,
 		VerificationStatus: resellerdomain.DomainVerificationPending,
 		Status:             resellerdomain.DomainStatusPendingReview,
 		IsPrimary:          false,
@@ -567,12 +596,20 @@ func normalizeAndValidateCustomDomain(raw string, cfg config.ResellerConfig) (st
 	if trimmed == "" {
 		return "", resellercontract.ErrDomainInvalid
 	}
-	if strings.Contains(trimmed, "://") || strings.ContainsAny(trimmed, "/?#") {
+	if strings.Contains(trimmed, "://") || strings.ContainsAny(trimmed, ":/?#* \t\r\n") {
 		return "", resellercontract.ErrDomainInvalid
 	}
 	domain := resellercontract.NormalizeHost(trimmed)
 	if domain == "" {
 		return "", resellercontract.ErrDomainInvalid
+	}
+	if len(domain) > 253 || net.ParseIP(domain) != nil || !strings.Contains(domain, ".") {
+		return "", resellercontract.ErrDomainInvalid
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if !isValidResellerSubdomainLabel(label) {
+			return "", resellercontract.ErrDomainInvalid
+		}
 	}
 	for _, mainHost := range cfg.MainHosts {
 		if domain == resellercontract.NormalizeHost(mainHost) {
@@ -607,6 +644,9 @@ func normalizeAndValidateSystemSubdomain(raw string, base string, cfg config.Res
 	if !strings.Contains(normalized, ".") {
 		if !isValidResellerSubdomainLabel(normalized) {
 			return "", resellercontract.ErrDomainInvalid
+		}
+		if isReservedResellerSubdomainLabel(normalized, cfg.ReservedSubdomains) {
+			return "", resellercontract.ErrSubdomainReserved
 		}
 		// 只填前缀时自动补强制后缀；已带后缀的保持原样。
 		if suffix != "" && !strings.HasSuffix(normalized, suffix) {

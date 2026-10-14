@@ -27,6 +27,35 @@ type managementStub struct {
 	err      error
 }
 
+func (s managementStub) SystemDomainPolicy() (string, string) { return "moshshop.com", "ai" }
+func (s managementStub) SubmitUserSystemDomain(userID uint, prefix string) (*resellerdomain.Domain, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &resellerdomain.Domain{Domain: prefix + "ai.moshshop.com", Type: resellerdomain.DomainTypeSubdomain, Status: resellerdomain.DomainStatusPendingReview}, nil
+}
+
+func TestUserHandlerSystemDomainRequiresAuthenticatedUserAndReturnsPending(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewUserHandler(managementStub{}, siteConfigStub{}, uploadStub{})
+	c, recorder := newUserHandlerTestContext(http.MethodPost, "/api/v1/user/reseller/system-domain-requests", []byte(`{"prefix":"gpt"}`), 0)
+	delete(c.Keys, "user_id")
+	h.SubmitSystemDomain(c)
+	if strings.Contains(recorder.Body.String(), "gptai.moshshop.com") {
+		t.Fatal("unauthenticated request should not submit a domain")
+	}
+	c, recorder = newUserHandlerTestContext(http.MethodPost, "/api/v1/user/reseller/system-domain-requests", []byte(`{"prefix":"gpt"}`), 7)
+	h.SubmitSystemDomain(c)
+	if !strings.Contains(recorder.Body.String(), `"status":"pending_review"`) {
+		t.Fatalf("request must stay pending: %s", recorder.Body.String())
+	}
+	c, recorder = newUserHandlerTestContext(http.MethodGet, "/api/v1/user/reseller/domain-policy", nil, 7)
+	h.GetDomainPolicy(c)
+	if !strings.Contains(recorder.Body.String(), `"suffix":"ai"`) {
+		t.Fatalf("missing policy: %s", recorder.Body.String())
+	}
+}
+
 func (s managementStub) GetUserManagementSnapshot(userID uint) (*resellerdomain.Profile, []resellerdomain.Domain, bool, error) {
 	return s.profile, s.domains, s.canApply, s.err
 }

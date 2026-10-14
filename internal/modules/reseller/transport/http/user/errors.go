@@ -25,6 +25,9 @@ var userManagementErrorRules = []mappedError{
 	{target: resellermodule.ErrDomainInvalid, code: response.CodeBadRequest, key: "error.reseller_domain_invalid"},
 	{target: resellermodule.ErrDomainMainHostNotAllowed, code: response.CodeBadRequest, key: "error.reseller_domain_main_host_not_allowed"},
 	{target: resellermodule.ErrDomainConflict, code: response.CodeBadRequest, key: "error.reseller_domain_conflict"},
+	{target: resellermodule.ErrSubdomainBaseMissing, code: response.CodeBadRequest, key: "error.reseller_subdomain_base_missing"},
+	{target: resellermodule.ErrSubdomainSuffixInvalid, code: response.CodeBadRequest, key: "error.reseller_subdomain_suffix_invalid"},
+	{target: resellermodule.ErrSubdomainReserved, code: response.CodeBadRequest, key: "error.reseller_subdomain_reserved"},
 	{target: resellermodule.ErrSiteConfigInvalid, code: response.CodeBadRequest, key: "error.reseller_site_config_invalid"},
 }
 
