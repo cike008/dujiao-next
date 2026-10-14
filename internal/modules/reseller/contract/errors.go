@@ -19,6 +19,10 @@ var (
 	ErrDomainStatusInvalid = errors.New("reseller domain status invalid")
 	// ErrSubdomainBaseMissing 表示系统子域基址未配置。
 	ErrSubdomainBaseMissing = errors.New("reseller subdomain base missing")
+	// ErrSubdomainReserved 表示子域标签命中保留名单。
+	ErrSubdomainReserved = errors.New("reseller subdomain reserved")
+	// ErrSubdomainSuffixInvalid 表示子域标签不符合强制后缀规则。
+	ErrSubdomainSuffixInvalid = errors.New("reseller subdomain suffix invalid")
 	// ErrDomainMainHostNotAllowed 表示域名命中主站 Host 保留区。
 	ErrDomainMainHostNotAllowed = errors.New("reseller domain main host not allowed")
 	// ErrSiteConfigInvalid 表示站点配置校验失败。

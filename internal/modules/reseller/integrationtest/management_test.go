@@ -196,6 +196,60 @@ func TestAdminResellerManagementAssignSystemSubdomainCreatesDomainAndAudit(t *te
 	}
 }
 
+func TestAdminResellerManagementAssignSystemSubdomainRejectsReservedLabels(t *testing.T) {
+	for _, label := range []string{"www", "SHOP", "share", "aiczzx", "shop.example.test"} {
+		label := label
+		t.Run(label, func(t *testing.T) {
+			h, db := setupAdminResellerManagementHandlerTest(t)
+			h.ResellerManagementService = resellermodule.NewManagementService(h.ResellerStore, config.ResellerConfig{
+				Enabled:            true,
+				SubdomainBase:      "shop.example.test",
+				ReservedSubdomains: []string{"aiczzx"},
+			})
+			profile := seedAdminResellerManagementProfile(t, db, resellerdomain.ProfileStatusActive)
+			body := fmt.Sprintf(`{"subdomain":%q}`, label)
+			c, recorder := newAdminResellerManagementContext(http.MethodPut, fmt.Sprintf("/admin/resellers/profiles/%d/system-domain", profile.ID), strings.NewReader(body))
+			c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", profile.ID)}}
+
+			adminResellerManagementHTTP(h).AssignSystemDomain(c)
+			var count int64
+			if err := db.Model(&resellerdomain.Domain{}).Where("reseller_id = ? AND type = ?", profile.ID, resellerdomain.DomainTypeSubdomain).Count(&count).Error; err != nil {
+				t.Fatalf("count failed: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("reserved label %q must not create a domain, body=%s", label, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestAdminResellerManagementAssignSystemSubdomainEnforcesSuffix(t *testing.T) {
+	cases := map[string]bool{"alicecoai": true, "AliceAI": true, "ai": false, "alice": true, "aialice": true, "alice-ai.shop.example.test": true, "alice.shop.example.test": false}
+	for label, ok := range cases {
+		label, ok := label, ok
+		t.Run(label, func(t *testing.T) {
+			h, db := setupAdminResellerManagementHandlerTest(t)
+			h.ResellerManagementService = resellermodule.NewManagementService(h.ResellerStore, config.ResellerConfig{
+				Enabled:         true,
+				SubdomainBase:   "shop.example.test",
+				SubdomainSuffix: "ai",
+			})
+			profile := seedAdminResellerManagementProfile(t, db, resellerdomain.ProfileStatusActive)
+			c, recorder := newAdminResellerManagementContext(http.MethodPut, fmt.Sprintf("/admin/resellers/profiles/%d/system-domain", profile.ID), strings.NewReader(fmt.Sprintf(`{"subdomain":%q}`, label)))
+			c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", profile.ID)}}
+
+			adminResellerManagementHTTP(h).AssignSystemDomain(c)
+			var count int64
+			if err := db.Model(&resellerdomain.Domain{}).Where("reseller_id = ? AND type = ?", profile.ID, resellerdomain.DomainTypeSubdomain).Count(&count).Error; err != nil {
+				t.Fatalf("count failed: %v", err)
+			}
+			if ok && count != 1 || !ok && count != 0 {
+				t.Fatalf("label %q expected allowed=%v, got count=%d body=%s", label, ok, count, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestAdminResellerManagementAssignSystemSubdomainReportsMissingSubdomainBase(t *testing.T) {
 	h, db := setupAdminResellerManagementHandlerTest(t)
 	h.ResellerManagementService = resellermodule.NewManagementService(h.ResellerStore, config.ResellerConfig{

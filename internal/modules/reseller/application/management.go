@@ -602,10 +602,15 @@ func normalizeAndValidateSystemSubdomain(raw string, base string, cfg config.Res
 	if normalized == "" {
 		return "", resellercontract.ErrDomainInvalid
 	}
+	suffix := strings.ToLower(strings.TrimSpace(cfg.SubdomainSuffix))
 	domain := normalized
 	if !strings.Contains(normalized, ".") {
 		if !isValidResellerSubdomainLabel(normalized) {
 			return "", resellercontract.ErrDomainInvalid
+		}
+		// 只填前缀时自动补强制后缀；已带后缀的保持原样。
+		if suffix != "" && !strings.HasSuffix(normalized, suffix) {
+			normalized += suffix
 		}
 		domain = normalized + "." + base
 	}
@@ -616,12 +621,41 @@ func normalizeAndValidateSystemSubdomain(raw string, base string, cfg config.Res
 	if strings.Contains(label, ".") || !isValidResellerSubdomainLabel(label) {
 		return "", resellercontract.ErrDomainInvalid
 	}
+	if suffix != "" && (!strings.HasSuffix(label, suffix) || len(label) <= len(suffix)) {
+		return "", resellercontract.ErrSubdomainSuffixInvalid
+	}
 	for _, mainHost := range cfg.MainHosts {
 		if domain == resellercontract.NormalizeHost(mainHost) {
 			return "", resellercontract.ErrDomainMainHostNotAllowed
 		}
 	}
+	if isReservedResellerSubdomainLabel(label, cfg.ReservedSubdomains) {
+		return "", resellercontract.ErrSubdomainReserved
+	}
 	return domain, nil
+}
+
+// builtinReservedSubdomainLabels 是始终禁止分配给分销商的子域标签。
+var builtinReservedSubdomainLabels = []string{
+	"www", "api", "admin", "app", "mail", "smtp", "imap", "pop", "ftp", "ns1", "ns2",
+	"static", "cdn", "assets", "dashboard", "console", "status", "support", "help",
+	"pay", "payment", "billing", "auth", "login", "oauth", "share", "shop", "store",
+	"test", "staging", "dev", "localhost",
+}
+
+func isReservedResellerSubdomainLabel(label string, extra []string) bool {
+	label = strings.ToLower(strings.TrimSpace(label))
+	for _, item := range builtinReservedSubdomainLabels {
+		if label == item {
+			return true
+		}
+	}
+	for _, item := range extra {
+		if label == strings.ToLower(strings.TrimSpace(item)) {
+			return true
+		}
+	}
+	return false
 }
 
 func isValidResellerSubdomainLabel(label string) bool {
