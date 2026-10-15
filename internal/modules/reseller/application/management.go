@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net"
 	"strings"
 	"time"
@@ -321,6 +323,9 @@ func (s *ManagementService) SubmitUserCustomDomain(userID uint, rawDomain string
 	if s == nil || s.store == nil || userID == 0 {
 		return nil, productcontract.ErrNotFound
 	}
+	if !s.cfg.Enabled {
+		return nil, resellercontract.ErrApplyDisabled
+	}
 	domain, err := normalizeAndValidateCustomDomain(rawDomain, s.cfg)
 	if err != nil {
 		return nil, err
@@ -364,7 +369,16 @@ func (s *ManagementService) submitUserDomain(userID uint, domain, domainType str
 		return nil, resellercontract.ErrProfileInactive
 	}
 	// Both domain types remain unavailable until an administrator approves them.
+	verificationToken := ""
+	if domainType == resellerdomain.DomainTypeCustom {
+		var token [32]byte
+		if _, err := rand.Read(token[:]); err != nil {
+			return nil, err
+		}
+		verificationToken = "moshshop-verification=" + hex.EncodeToString(token[:])
+	}
 	row, err := s.store.UpsertDomain(resellerdomain.Domain{
+		VerificationToken:  verificationToken,
 		ResellerID:         profile.ID,
 		Domain:             domain,
 		Type:               domainType,
@@ -603,7 +617,7 @@ func normalizeAndValidateCustomDomain(raw string, cfg config.ResellerConfig) (st
 	if domain == "" {
 		return "", resellercontract.ErrDomainInvalid
 	}
-	if len(domain) > 253 || net.ParseIP(domain) != nil || !strings.Contains(domain, ".") {
+	if len("_moshshop-verify."+domain) > 253 || net.ParseIP(domain) != nil || !strings.Contains(domain, ".") {
 		return "", resellercontract.ErrDomainInvalid
 	}
 	for _, label := range strings.Split(domain, ".") {

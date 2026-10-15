@@ -2,6 +2,7 @@ package integrationtest
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
@@ -92,6 +93,9 @@ func TestResellerManagementApplyDisabledConfigRejects(t *testing.T) {
 	_, err := svc.ApplyUserReseller(user.ID, ResellerApplyInput{Reason: "want access"})
 	if !errors.Is(err, ErrResellerApplyDisabled) {
 		t.Fatalf("expected ErrResellerApplyDisabled, got %v", err)
+	}
+	if _, err := svc.SubmitUserCustomDomain(user.ID, "shop.customer.example"); !errors.Is(err, ErrResellerApplyDisabled) {
+		t.Fatalf("disabled reseller mode accepted domain application: %v", err)
 	}
 }
 
@@ -234,8 +238,23 @@ func TestResellerManagementSubmitAndApproveCustomDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitUserCustomDomain failed: %v", err)
 	}
-	if domain.Domain != "shop.customer.example" || domain.Type != resellerdomain.DomainTypeCustom || domain.VerificationStatus != resellerdomain.DomainVerificationPending || domain.Status != resellerdomain.DomainStatusPendingReview || domain.VerificationToken != "" {
+	if domain.Domain != "shop.customer.example" || domain.Type != resellerdomain.DomainTypeCustom || domain.VerificationStatus != resellerdomain.DomainVerificationPending || domain.Status != resellerdomain.DomainStatusPendingReview {
 		t.Fatalf("unexpected submitted domain: %+v", domain)
+	}
+	decoded, err := hex.DecodeString(strings.TrimPrefix(domain.VerificationToken, "moshshop-verification="))
+	if err != nil || len(decoded) != 32 {
+		t.Fatal("missing random ownership token")
+	}
+	if _, err := svc.SubmitUserCustomDomain(user.ID, domain.Domain); !errors.Is(err, resellercontract.ErrDomainConflict) {
+		t.Fatalf("duplicate application accepted: %v", err)
+	}
+	stored, err := resellergormstore.New(db).GetDomainByID(domain.ID)
+	if err != nil || stored.VerificationToken != domain.VerificationToken {
+		t.Fatal("duplicate request rotated the DNS token")
+	}
+	second, err := svc.SubmitUserCustomDomain(user.ID, "other.customer.example")
+	if err != nil || second.VerificationToken == domain.VerificationToken {
+		t.Fatal("domain ownership tokens must be independent")
 	}
 
 	approved, err := svc.ApproveDomain(context.Background(), 9, domain.ID)
