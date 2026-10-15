@@ -60,6 +60,13 @@ func (s *AccountingWithdrawService) ApplyWithdraw(resellerID uint, input reselle
 	}
 	var createdID uint
 	err := s.store.WithinWithdrawTransaction(func(store resellercontract.AccountingWithdrawStore) error {
+		profile, err := store.GetProfileForSettlementUpdate(resellerID)
+		if err != nil {
+			return err
+		}
+		if err := RequireActiveProfile(profile); err != nil {
+			return err
+		}
 		balance, err := store.GetOrCreateBalanceAccountForUpdate(resellerID, currency)
 		if err != nil {
 			return err
@@ -170,6 +177,43 @@ func (s *AccountingWithdrawService) ReviewWithdraw(adminID uint, withdrawID uint
 		}
 		if req.Status != resellerdomain.WithdrawStatusPending {
 			return resellercontract.ErrWithdrawStatusInvalid
+		}
+		if act == resellercontract.WithdrawActionPay {
+			profile, err := store.GetProfileForSettlementUpdate(req.ResellerID)
+			if err != nil {
+				return err
+			}
+			if err := RequireActiveProfile(profile); err != nil {
+				return err
+			}
+			balance, err := store.GetOrCreateBalanceAccountForUpdate(req.ResellerID, req.Currency)
+			if err != nil {
+				return err
+			}
+			if balance.Status != resellerdomain.BalanceStatusNormal {
+				return resellercontract.ErrBalanceAccountFrozen
+			}
+			sums, err := store.SumLedgerAmountGroupedByStatus(req.ResellerID, req.Currency, []string{resellerdomain.LedgerStatusAvailable})
+			if err != nil {
+				return err
+			}
+			if sums[resellerdomain.LedgerStatusAvailable].IsNegative() {
+				return resellercontract.ErrWithdrawInsufficient
+			}
+			rows, err := store.ListWithdrawLedgerEntriesForUpdate(req.ID)
+			if err != nil {
+				return err
+			}
+			total := decimal.Zero
+			for _, row := range rows {
+				if row.ResellerID != req.ResellerID || row.Currency != req.Currency || row.Status != resellerdomain.LedgerStatusLocked || !row.Amount.Decimal.IsPositive() {
+					return resellercontract.ErrWithdrawStatusInvalid
+				}
+				total = total.Add(row.Amount.Decimal)
+			}
+			if !req.Amount.Decimal.IsPositive() || !total.Equal(req.Amount.Decimal) {
+				return resellercontract.ErrWithdrawStatusInvalid
+			}
 		}
 		now := time.Now()
 		req.ProcessedBy = &adminID

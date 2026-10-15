@@ -240,6 +240,18 @@ func KeyByIP(c *gin.Context) string {
 	return c.ClientIP()
 }
 
+// ResellerWriteRateLimit shares a mutation budget across IPs for each account.
+func ResellerWriteRateLimit(client *redis.Client) gin.HandlerFunc {
+	limit := RateLimitMiddleware(client, RateLimitRule{Prefix: "reseller-write-user", WindowSeconds: 60, MaxRequests: 30, BlockSeconds: 60}, func(c *gin.Context) string { return fmt.Sprint(c.GetUint("user_id")) })
+	return func(c *gin.Context) {
+		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
+			c.Next()
+			return
+		}
+		limit(c)
+	}
+}
+
 // KeyByUserIDAndIP isolates authenticated mutation limits by both account and
 // source IP. It falls back to IP when authentication context is unavailable.
 func KeyByUserIDAndIP(c *gin.Context) string {

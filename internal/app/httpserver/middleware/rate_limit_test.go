@@ -43,6 +43,41 @@ func TestKeyByIPAndJSONField(t *testing.T) {
 	}
 }
 
+func TestResellerWriteBudgetIgnoresReadsAndIsolatesUsers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.GetHeader("Test-User"))
+		c.Set("user_id", uint(id))
+		c.Next()
+	})
+	r.Use(ResellerWriteRateLimit(nil))
+	r.Any("/reseller/test", func(c *gin.Context) { c.Status(204) })
+	call := func(method, user string) int {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "/reseller/test", nil)
+		req.Header.Set("Test-User", user)
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	for i := 0; i < 35; i++ {
+		if call("GET", "1") != 204 {
+			t.Fatal("read was throttled")
+		}
+	}
+	for i := 0; i < 30; i++ {
+		if call("POST", "1") != 204 {
+			t.Fatal("write blocked before budget")
+		}
+	}
+	if call("PUT", "1") != 429 {
+		t.Fatal("mutation budget not shared")
+	}
+	if call("POST", "2") != 204 || call("GET", "1") != 204 {
+		t.Fatal("limit leaked into other users or reads")
+	}
+}
+
 func TestRateLimitMiddlewareWithoutClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

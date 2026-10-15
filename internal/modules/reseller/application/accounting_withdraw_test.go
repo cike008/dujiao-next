@@ -36,6 +36,13 @@ func TestAccountingWithdrawServiceRejectsInvalidAmount(t *testing.T) {
 
 type accountingWithdrawStoreStub struct{}
 
+func (accountingWithdrawStoreStub) GetProfileForSettlementUpdate(uint) (*resellerdomain.Profile, error) {
+	return nil, nil
+}
+func (accountingWithdrawStoreStub) ListWithdrawLedgerEntriesForUpdate(uint) ([]resellerdomain.LedgerEntry, error) {
+	return nil, nil
+}
+
 func (accountingWithdrawStoreStub) WithinWithdrawTransaction(fn func(store resellercontract.AccountingWithdrawStore) error) error {
 	return fn(accountingWithdrawStoreStub{})
 }

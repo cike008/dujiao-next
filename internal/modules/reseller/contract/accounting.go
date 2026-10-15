@@ -152,6 +152,8 @@ type BalanceAccountStore interface {
 // WithinTransaction 不得向用例暴露具体数据库连接类型。
 type AccountingWithdrawStore interface {
 	BalanceAccountStore
+	GetProfileForSettlementUpdate(uint) (*resellerdomain.Profile, error)
+	ListWithdrawLedgerEntriesForUpdate(uint) ([]resellerdomain.LedgerEntry, error)
 	WithinWithdrawTransaction(fn func(store AccountingWithdrawStore) error) error
 	GetProfileByUserID(userID uint) (*resellerdomain.Profile, error)
 	ListAvailableLedgerEntriesForUpdate(resellerID uint, currency string) ([]resellerdomain.LedgerEntry, error)

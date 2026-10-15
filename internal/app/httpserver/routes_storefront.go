@@ -161,6 +161,7 @@ func registerStorefrontRoutes(
 
 		resellerConsole := user.Group("/reseller")
 		resellerConsole.Use(middleware.RequireMainTenantForResellerConsole())
+		resellerConsole.Use(middleware.ResellerWriteRateLimit(redisClient))
 		{
 			resellertransport.RegisterUserConsoleRoutes(resellerConsole, userResellerHandler)
 			resellertransport.RegisterUserProductSettingRoutes(resellerConsole, userResellerProductSettingHandler)

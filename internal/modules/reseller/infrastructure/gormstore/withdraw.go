@@ -14,6 +14,21 @@ import (
 )
 
 // CreateWithdrawRequest 创建分销提现申请。
+func (r *Store) GetProfileForSettlementUpdate(id uint) (*resellerdomain.Profile, error) {
+	var profile resellerdomain.Profile
+	err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", id).First(&profile).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &profile, err
+}
+
+func (r *Store) ListWithdrawLedgerEntriesForUpdate(id uint) ([]resellerdomain.LedgerEntry, error) {
+	var rows []resellerdomain.LedgerEntry
+	err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("withdraw_request_id = ? AND deleted_at IS NULL", id).Order("id").Find(&rows).Error
+	return rows, err
+}
+
 func (r *Store) CreateWithdrawRequest(req *resellerdomain.WithdrawRequest) error {
 	if req == nil {
 		return errors.New("reseller withdraw request is nil")

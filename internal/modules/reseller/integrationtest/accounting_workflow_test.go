@@ -760,6 +760,50 @@ func TestResellerAccountingPayWithdrawMarksLedgersWithdrawn(t *testing.T) {
 	}
 }
 
+func TestWithdrawPayRevalidatesRiskAndLockedFunds(t *testing.T) {
+	for _, risk := range []string{"disabled", "frozen", "negative", "tampered", "missing"} {
+		t.Run(risk, func(t *testing.T) {
+			db := openResellerAccountingServiceTestDB(t)
+			profile := seedResellerAccountingProfile(t, db)
+			row := resellerdomain.LedgerEntry{ResellerID: profile.ID, Type: resellerdomain.LedgerTypeOrderProfit, Amount: money.FromDecimal(decimal.NewFromInt(10)), Currency: "USD", IdempotencyKey: "risk-test", Status: resellerdomain.LedgerStatusAvailable}
+			if err := db.Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			repo := resellergormstore.New(db)
+			svc := newResellerAccountingTestHarness(repo, 0)
+			req, err := svc.withdraw.ApplyWithdraw(profile.ID, resellercontract.WithdrawApplyInput{Amount: decimal.NewFromInt(10), Currency: "USD", Channel: "bank", Account: "fixture"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch risk {
+			case "disabled":
+				err = db.Model(&profile).Update("status", resellerdomain.ProfileStatusDisabled).Error
+			case "frozen":
+				err = db.Model(&profile).Update("settlement_status", "frozen").Error
+			case "negative":
+				err = db.Create(&resellerdomain.LedgerEntry{ResellerID: profile.ID, Type: resellerdomain.LedgerTypeRefundDeduct, Amount: money.FromDecimal(decimal.NewFromInt(-1)), Currency: "USD", IdempotencyKey: "refund-risk", Status: resellerdomain.LedgerStatusAvailable}).Error
+			case "tampered":
+				err = db.Model(&row).Update("amount", 9).Error
+			case "missing":
+				err = db.Model(&row).Update("withdraw_request_id", nil).Error
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.withdraw.ReviewWithdraw(99, req.ID, resellercontract.WithdrawActionPay, ""); err == nil {
+				t.Fatal("unsafe payout accepted")
+			}
+			stored, _ := repo.GetWithdrawRequestByID(req.ID)
+			if stored.Status != resellerdomain.WithdrawStatusPending {
+				t.Fatal("rejected payout mutated request")
+			}
+			if _, err := svc.withdraw.ReviewWithdraw(99, req.ID, resellercontract.WithdrawActionReject, "risk review"); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestResellerAccountingPayPartialWithdrawKeepsRemainingAvailableBalance(t *testing.T) {
 	db := openResellerAccountingServiceTestDB(t)
 	profile := seedResellerAccountingProfile(t, db)
