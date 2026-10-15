@@ -30,7 +30,7 @@ type PricingRule struct {
 }
 
 // ResolveUnitAmount 按 SKU → 商品 → 资料默认加价 → 继承底价的优先级解析成交单价。
-func ResolveUnitAmount(profile *resellerdomain.Profile, productSetting *resellerdomain.ProductSetting, skuSetting *resellerdomain.ProductSetting, baseUnit decimal.Decimal) (decimal.Decimal, PricingRule, error) {
+func ResolveUnitAmount(profile *resellerdomain.Profile, productSetting *resellerdomain.ProductSetting, skuSetting *resellerdomain.ProductSetting, baseUnit decimal.Decimal, retailFallback ...decimal.Decimal) (decimal.Decimal, PricingRule, error) {
 	if skuSetting != nil && strings.TrimSpace(skuSetting.PricingMode) != resellerdomain.PricingModeInherit {
 		return ApplyPricingRule(*skuSetting, RuleSourceSKU, baseUnit)
 	}
@@ -44,6 +44,9 @@ func ResolveUnitAmount(profile *resellerdomain.Profile, productSetting *reseller
 			MarkupPercent: profile.DefaultMarkupPercent.Decimal.Round(2),
 		}
 		return ApplyMarkupPercent(baseUnit, rule.MarkupPercent), rule, nil
+	}
+	if len(retailFallback) > 0 {
+		baseUnit = retailFallback[0]
 	}
 	return baseUnit.Round(2), PricingRule{Mode: resellerdomain.PricingModeInherit, Source: RuleSourceInherit}, nil
 }

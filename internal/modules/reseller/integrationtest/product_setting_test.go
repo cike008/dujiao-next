@@ -2,6 +2,7 @@ package integrationtest
 
 import (
 	"fmt"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"testing"
 	"time"
 
@@ -24,6 +25,49 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+type productSupplyStub struct {
+	prices resellercontract.SupplyPrices
+	owner  uint
+}
+
+func (s *productSupplyStub) ResolveSupplyPrices(owner uint, _ []uint) (resellercontract.SupplyPrices, error) {
+	s.owner = owner
+	return s.prices, nil
+}
+
+func TestMemberSupplyPriceSavePreviewAndDetail(t *testing.T) {
+	db := openResellerProductSettingServiceTestDB(t)
+	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	svc := newResellerProductSettingServiceForTest(db)
+	supply := &productSupplyStub{prices: resellercontract.SupplyPrices{{ProductID: product.ID, SKUID: skus[0].ID}: decimal.NewFromInt(90)}}
+	svc.SetSupplyPriceResolver(supply)
+	input := ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.NewFromInt(95)}}}
+	preview, err := svc.PreviewUserProductSettings(user.ID, product.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range preview {
+		if item.SKUID == skus[0].ID && (!item.Valid || !item.BasePrice.Equal(decimal.NewFromInt(90)) || !item.EffectivePrice.Equal(decimal.NewFromInt(95))) {
+			t.Fatalf("preview mismatch: %+v", item)
+		}
+	}
+	detail, err := svc.SaveUserProductSettings(user.ID, product.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supply.owner != user.ID || !detail.EffectiveBySKUID[skus[0].ID].Equal(decimal.NewFromInt(95)) {
+		t.Fatalf("incorrect owner/detail: %+v", detail)
+	}
+	input.Settings[0].FixedPriceAmount = decimal.NewFromInt(89)
+	if _, err := svc.SaveUserProductSettings(user.ID, product.ID, input); err == nil {
+		t.Fatal("below supply saved")
+	}
+	detail, err = svc.GetUserProductSetting(user.ID, product.ID)
+	if err != nil || !detail.EffectiveBySKUID[skus[0].ID].Equal(decimal.NewFromInt(95)) {
+		t.Fatalf("invalid save changed prior rule: %v", err)
+	}
+}
 
 func openResellerProductSettingServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -270,6 +314,71 @@ func TestResellerProductSettingServicePreviewFlagsInvalidRules(t *testing.T) {
 	skuB := findPreviewItem(items, skus[1].ID)
 	if skuB == nil || skuB.Valid || skuB.ErrorCode != "markup_exceeded" {
 		t.Fatalf("sku B want invalid markup_exceeded, got %+v", skuB)
+	}
+}
+
+func TestPreviewRetainsSavedRulesOutsideEditedScope(t *testing.T) {
+	db := openResellerProductSettingServiceTestDB(t)
+	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	svc := newResellerProductSettingServiceForTest(db)
+	_, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{
+		{SKUID: 0, IsListed: true, PricingMode: resellerdomain.PricingModeMarkupPercent, MarkupPercent: decimal.NewFromInt(20)},
+		{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: decimal.NewFromInt(130)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []ResellerProductSettingSaveInput{
+		{Settings: []ResellerProductSettingInput{{SKUID: skus[1].ID, IsListed: true, PricingMode: resellerdomain.PricingModeInherit}}},
+		{Settings: []ResellerProductSettingInput{{SKUID: 0, IsListed: true, PricingMode: resellerdomain.PricingModeMarkupPercent, MarkupPercent: decimal.NewFromInt(20)}}},
+	} {
+		items, err := svc.PreviewUserProductSettings(user.ID, product.ID, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			id    uint
+			price string
+		}{{skus[0].ID, "130.00"}, {skus[1].ID, "240.00"}} {
+			item := findPreviewItem(items, tc.id)
+			if item == nil || !item.Valid || item.EffectivePrice.StringFixed(2) != tc.price {
+				t.Fatalf("saved rule lost: %+v", item)
+			}
+		}
+	}
+	_, err = svc.PreviewUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{{SKUID: 999999, IsListed: true, PricingMode: resellerdomain.PricingModeInherit}}})
+	if err == nil {
+		t.Fatal("foreign SKU preview accepted")
+	}
+}
+
+func TestPreviewWithoutSKUUsesDefaultPriceAndPreservesProductUnlisting(t *testing.T) {
+	db := openResellerProductSettingServiceTestDB(t)
+	user, _, product, skus := seedResellerProductSettingServiceData(t, db)
+	svc := newResellerProductSettingServiceForTest(db)
+	_, err := svc.SaveUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{{SKUID: 0, IsListed: false, PricingMode: resellerdomain.PricingModeInherit}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := svc.PreviewUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{Settings: []ResellerProductSettingInput{{SKUID: skus[0].ID, IsListed: true, PricingMode: resellerdomain.PricingModeInherit}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := findPreviewItem(items, skus[0].ID); item == nil || item.IsListed {
+		t.Fatalf("unlisted product exposed in preview: %+v", item)
+	}
+	if err := svc.ResetUserProductSetting(user.ID, product.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("product_id = ?", product.ID).Delete(&productdomain.ProductSKU{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err = svc.PreviewUserProductSettings(user.ID, product.ID, ResellerProductSettingSaveInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := findPreviewItem(items, 0); item == nil || !item.Valid || item.EffectivePrice.StringFixed(2) != "110.00" {
+		t.Fatalf("default product preview incorrect: %+v", item)
 	}
 }
 

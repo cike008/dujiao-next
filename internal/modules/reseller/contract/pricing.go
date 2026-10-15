@@ -67,6 +67,23 @@ type DisplayPricingBatch struct {
 	Tenant            TenantContext
 	Profile           *resellerdomain.Profile
 	SettingsByProduct map[uint][]resellerdomain.ProductSetting
+	SupplyPrices      SupplyPrices `json:"-"`
+}
+
+// SupplyPrices is internal pricing data, never a public storefront response.
+type SupplyPrices map[SettingKey]decimal.Decimal
+
+type SupplyPriceResolver interface {
+	ResolveSupplyPrices(userID uint, productIDs []uint) (SupplyPrices, error)
+}
+
+func (prices SupplyPrices) Unit(productID, skuID uint, retail decimal.Decimal) decimal.Decimal {
+	for _, key := range []SettingKey{{ProductID: productID, SKUID: skuID}, {ProductID: productID}} {
+		if price, ok := prices[key]; ok && price.GreaterThan(decimal.Zero) {
+			return decimal.Min(price.Round(2), retail.Round(2))
+		}
+	}
+	return retail.Round(2)
 }
 
 // SettingKey 商品/SKU 配置索引键。

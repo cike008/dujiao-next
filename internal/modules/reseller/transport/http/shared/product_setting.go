@@ -57,6 +57,7 @@ func DetailDTOInput(detail *resellerapplication.ProductSettingDetail) dto.Resell
 		return dto.ResellerProductSettingDTOInput{}
 	}
 	return dto.ResellerProductSettingDTOInput{
+		SupplyPrices:     detail.SupplyPrices,
 		Product:          detail.Product,
 		Settings:         detail.Settings,
 		EffectiveBySKUID: decimalMapToStringMap(detail.EffectiveBySKUID),
@@ -68,6 +69,7 @@ func ListDTOInput(rows []resellerapplication.ProductSettingListRow) []dto.Resell
 	out := make([]dto.ResellerProductSettingDTOInput, 0, len(rows))
 	for i := range rows {
 		out = append(out, dto.ResellerProductSettingDTOInput{
+			SupplyPrices:     rows[i].SupplyPrices,
 			Product:          rows[i].Product,
 			Settings:         rows[i].Settings,
 			EffectiveBySKUID: decimalMapToStringMap(rows[i].EffectiveBySKUID),

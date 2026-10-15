@@ -2,6 +2,8 @@ package container
 
 // wireServiceDependencies 收口构造后才能建立的双向或延迟依赖。
 func (c *Container) wireServiceDependencies() {
+	c.ResellerPricingResolver.SetSupplyPriceResolver(c.MemberLevelService)
+	c.ResellerProductSettingService.SetSupplyPriceResolver(c.MemberLevelService)
 	c.UserAuthService.SetMemberLevelService(c.MemberLevelService)
 	c.OrderRefundService.SetResellerAccounting(c.ResellerAccountingLedger)
 	c.PaymentService.SetMemberLevelService(c.MemberLevelService)

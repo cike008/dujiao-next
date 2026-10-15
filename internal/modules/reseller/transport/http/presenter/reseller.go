@@ -1,6 +1,7 @@
 package presenter
 
 import (
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"time"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
@@ -157,21 +158,23 @@ type ResellerProductSettingResp struct {
 }
 
 type ResellerProductSettingProductResp struct {
-	ID          uint         `json:"id"`
-	Slug        string       `json:"slug"`
-	Title       jsonmap.JSON `json:"title"`
-	PriceAmount string       `json:"price_amount"`
-	IsActive    bool         `json:"is_active"`
+	SupplyPriceAmount string       `json:"supply_price_amount"`
+	ID                uint         `json:"id"`
+	Slug              string       `json:"slug"`
+	Title             jsonmap.JSON `json:"title"`
+	PriceAmount       string       `json:"price_amount"`
+	IsActive          bool         `json:"is_active"`
 }
 
 type ResellerProductSettingSKUResp struct {
-	ID              uint                        `json:"id"`
-	SKUCode         string                      `json:"sku_code"`
-	SpecValues      jsonmap.JSON                `json:"spec_values"`
-	BasePriceAmount string                      `json:"base_price_amount"`
-	IsActive        bool                        `json:"is_active"`
-	Setting         *ResellerProductSettingResp `json:"setting,omitempty"`
-	EffectivePrice  string                      `json:"effective_price_amount,omitempty"`
+	SupplyPriceAmount string                      `json:"supply_price_amount"`
+	ID                uint                        `json:"id"`
+	SKUCode           string                      `json:"sku_code"`
+	SpecValues        jsonmap.JSON                `json:"spec_values"`
+	BasePriceAmount   string                      `json:"base_price_amount"`
+	IsActive          bool                        `json:"is_active"`
+	Setting           *ResellerProductSettingResp `json:"setting,omitempty"`
+	EffectivePrice    string                      `json:"effective_price_amount,omitempty"`
 }
 
 type ResellerProductSettingDetailResp struct {
@@ -181,6 +184,7 @@ type ResellerProductSettingDetailResp struct {
 }
 
 type ResellerProductSettingDTOInput struct {
+	SupplyPrices     resellercontract.SupplyPrices
 	Product          productdomain.Product
 	Settings         []resellerdomain.ProductSetting
 	EffectiveBySKUID map[uint]string
@@ -386,11 +390,12 @@ func NewResellerProductSettingDetailResp(input ResellerProductSettingDTOInput) R
 	productSetting := findResellerProductSetting(input.Settings, 0)
 	resp := ResellerProductSettingDetailResp{
 		Product: ResellerProductSettingProductResp{
-			ID:          input.Product.ID,
-			Slug:        input.Product.Slug,
-			Title:       input.Product.TitleJSON,
-			PriceAmount: input.Product.PriceAmount.String(),
-			IsActive:    input.Product.IsActive,
+			SupplyPriceAmount: input.SupplyPrices.Unit(input.Product.ID, 0, input.Product.PriceAmount.Decimal).StringFixed(2),
+			ID:                input.Product.ID,
+			Slug:              input.Product.Slug,
+			Title:             input.Product.TitleJSON,
+			PriceAmount:       input.Product.PriceAmount.String(),
+			IsActive:          input.Product.IsActive,
 		},
 		SKUs: make([]ResellerProductSettingSKUResp, 0, len(input.Product.SKUs)),
 	}
@@ -405,13 +410,14 @@ func NewResellerProductSettingDetailResp(input ResellerProductSettingDTOInput) R
 			settingResp = newResellerProductSettingResp(*setting, input.EffectiveBySKUID[sku.ID], input.RuleBySKUID[sku.ID])
 		}
 		resp.SKUs = append(resp.SKUs, ResellerProductSettingSKUResp{
-			ID:              sku.ID,
-			SKUCode:         sku.SKUCode,
-			SpecValues:      sku.SpecValuesJSON,
-			BasePriceAmount: sku.PriceAmount.String(),
-			IsActive:        sku.IsActive,
-			Setting:         settingResp,
-			EffectivePrice:  input.EffectiveBySKUID[sku.ID],
+			SupplyPriceAmount: input.SupplyPrices.Unit(input.Product.ID, sku.ID, sku.PriceAmount.Decimal).StringFixed(2),
+			ID:                sku.ID,
+			SKUCode:           sku.SKUCode,
+			SpecValues:        sku.SpecValuesJSON,
+			BasePriceAmount:   sku.PriceAmount.String(),
+			IsActive:          sku.IsActive,
+			Setting:           settingResp,
+			EffectivePrice:    input.EffectiveBySKUID[sku.ID],
 		})
 	}
 	return resp

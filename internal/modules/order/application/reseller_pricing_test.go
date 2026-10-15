@@ -18,6 +18,67 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type supplyPriceStub struct {
+	prices resellercontract.SupplyPrices
+	err    error
+	owner  uint
+}
+
+func (s *supplyPriceStub) ResolveSupplyPrices(owner uint, _ []uint) (resellercontract.SupplyPrices, error) {
+	s.owner = owner
+	return s.prices, s.err
+}
+
+func TestResellerMemberSupplyOrderAndDisplay(t *testing.T) {
+	profile := testResellerProfile()
+	profile.DefaultMarkupPercent = money.FromDecimal(decimal.Zero)
+	repo := &resellerPricingRepoStub{profile: profile}
+	resolver := NewResellerPricingResolver(repo)
+	supply := &supplyPriceStub{prices: resellercontract.SupplyPrices{{ProductID: 1, SKUID: 2}: decimal.NewFromInt(100)}}
+	resolver.SetSupplyPriceResolver(supply)
+	build := func() *orderBuildResult {
+		return testOrderBuildResult(struct {
+			productID uint
+			skuID     uint
+			base      decimal.Decimal
+			cost      decimal.Decimal
+			quantity  int
+		}{1, 2, decimal.NewFromInt(130), decimal.NewFromInt(80), 1})
+	}
+	result := build()
+	ctx, err := resolver.ApplyToOrderBuildResult(testResellerTenant(), 1234, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supply.owner != profile.UserID || !ctx.BaseAmount.Equal(decimal.NewFromInt(100)) || !ctx.ResellerAmount.Equal(decimal.NewFromInt(130)) || !ctx.ProfitAmount.Equal(decimal.NewFromInt(30)) {
+		t.Fatalf("incorrect owner/pricing: %+v", ctx)
+	}
+	products := []productdomain.Product{{ID: 1, SKUs: []productdomain.ProductSKU{*result.Plans[0].SKU}}}
+	batch, err := resolver.LoadDisplayPricingBatch(testResellerTenant(), products)
+	if err != nil {
+		t.Fatal(err)
+	}
+	display, err := resolver.ResolveDisplayPrices(testResellerTenant(), &products[0], batch)
+	if err != nil || !display.DisplayPrice.Decimal.Equal(decimal.NewFromInt(130)) {
+		t.Fatalf("display mismatch: %+v %v", display, err)
+	}
+	supply.prices[resellercontract.SettingKey{ProductID: 1, SKUID: 2}] = decimal.NewFromInt(110)
+	if !ctx.Items[0].BaseUnitAmount.Equal(decimal.NewFromInt(100)) || ctx.PricingSnapshot["base_amount"] != "100.00" {
+		t.Fatalf("snapshot changed: %+v", ctx.PricingSnapshot)
+	}
+	repo.settings = []resellerdomain.ProductSetting{{ProductID: 1, SKUID: 2, IsListed: true, PricingMode: resellerdomain.PricingModeFixedPrice, FixedPriceAmount: money.FromDecimal(decimal.NewFromInt(109))}}
+	if _, err := resolver.ApplyToOrderBuildResult(testResellerTenant(), 1234, build()); !errors.Is(err, resellercontract.ErrPriceBelowBase) {
+		t.Fatalf("below supply accepted: %v", err)
+	}
+	supply.err = errors.New("database unavailable")
+	if _, err := resolver.ApplyToOrderBuildResult(testResellerTenant(), 1234, build()); err == nil {
+		t.Fatal("supply lookup failed open")
+	}
+	if _, err := resolver.LoadDisplayPricingBatch(testResellerTenant(), products); err == nil {
+		t.Fatal("display lookup failed open")
+	}
+}
+
 type resellerPricingRepoStub struct {
 	profile         *resellerdomain.Profile
 	settings        []resellerdomain.ProductSetting

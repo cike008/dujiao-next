@@ -1,12 +1,47 @@
 package application
 
 import (
+	"github.com/dujiao-next/internal/constants"
 	userdomain "github.com/dujiao-next/internal/modules/identity/user/domain"
 	memberlevelcontract "github.com/dujiao-next/internal/modules/memberlevel/contract"
 	memberleveldomain "github.com/dujiao-next/internal/modules/memberlevel/domain"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 
 	"github.com/shopspring/decimal"
 )
+
+// ResolveSupplyPrices uses only the reseller owner's active membership. Missing
+// overrides inherit retail; storage errors must not silently change settlement.
+func (s *Service) ResolveSupplyPrices(userID uint, productIDs []uint) (resellercontract.SupplyPrices, error) {
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || user.Status != constants.UserStatusActive || user.DeletedAt != nil {
+		return nil, resellercontract.ErrProfileInactive
+	}
+	if user.MemberLevelID == 0 {
+		return nil, nil
+	}
+	level, err := s.levelRepo.GetByID(user.MemberLevelID)
+	if err != nil {
+		return nil, err
+	}
+	if level == nil || !level.IsActive {
+		return nil, nil
+	}
+	rows, err := s.priceRepo.ListByLevelAndProducts(level.ID, productIDs)
+	if err != nil {
+		return nil, err
+	}
+	prices := resellercontract.SupplyPrices{}
+	for _, row := range rows {
+		if row.PriceAmount.Decimal.GreaterThan(decimal.Zero) {
+			prices[resellercontract.SettingKey{ProductID: row.ProductID, SKUID: row.SKUID}] = row.PriceAmount.Decimal.Round(2)
+		}
+	}
+	return prices, nil
+}
 
 // Service 会员等级服务
 type Service struct {

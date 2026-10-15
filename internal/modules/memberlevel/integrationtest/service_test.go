@@ -2,6 +2,7 @@ package integrationtest
 
 import (
 	"fmt"
+	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"testing"
 	"time"
 
@@ -16,6 +17,54 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+func TestSupplyPricesUseOwnerOverridesAndFallback(t *testing.T) {
+	svc, db := newMemberLevelServiceForTest(t)
+	level := createMemberLevelFixture(t, db, "supplier", 1, "0", false)
+	owner := createUserFixture(t, db, "supplier@example.test", level.ID)
+	other := createMemberLevelFixture(t, db, "other", 2, "0", false)
+	rows := []memberleveldomain.MemberLevelPrice{
+		{MemberLevelID: level.ID, ProductID: 10, SKUID: 0, PriceAmount: money.FromDecimal(decimal.NewFromInt(100))},
+		{MemberLevelID: level.ID, ProductID: 10, SKUID: 11, PriceAmount: money.FromDecimal(decimal.NewFromInt(90))},
+		{MemberLevelID: other.ID, ProductID: 10, SKUID: 11, PriceAmount: money.FromDecimal(decimal.NewFromInt(1))},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	prices, err := svc.ResolveSupplyPrices(owner.ID, []uint{10, 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		product, sku uint
+		want         int64
+	}{{10, 11, 90}, {10, 12, 100}, {20, 21, 130}} {
+		if got := prices.Unit(tc.product, tc.sku, decimal.NewFromInt(130)); !got.Equal(decimal.NewFromInt(tc.want)) {
+			t.Fatalf("unexpected supply %s", got)
+		}
+	}
+	// An override above retail must not inflate the procurement basis.
+	prices[resellercontract.SettingKey{ProductID: 10, SKUID: 11}] = decimal.NewFromInt(200)
+	if got := prices.Unit(10, 11, decimal.NewFromInt(130)); !got.Equal(decimal.NewFromInt(130)) {
+		t.Fatal(got)
+	}
+	if err := db.Model(&level).Update("is_active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	prices, err = svc.ResolveSupplyPrices(owner.ID, []uint{10})
+	if err != nil || len(prices) != 0 {
+		t.Fatalf("inactive level must inherit retail: %v %v", prices, err)
+	}
+	if err := db.Model(&owner).Update("status", "disabled").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveSupplyPrices(owner.ID, []uint{10}); err == nil {
+		t.Fatal("disabled owner accepted")
+	}
+	if _, err := svc.ResolveSupplyPrices(99999, []uint{10}); err == nil {
+		t.Fatal("missing owner accepted")
+	}
+}
 
 func newMemberLevelServiceForTest(t *testing.T) (*memberlevelapp.Service, *gorm.DB) {
 	t.Helper()
