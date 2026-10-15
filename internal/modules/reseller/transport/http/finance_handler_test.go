@@ -24,6 +24,44 @@ type financeServiceStub struct {
 	err       error
 }
 
+type settlementStub struct{ calls int }
+
+func (s *settlementStub) GetSettlementSetting() (*resellerdomain.SettlementSetting, error) {
+	return &resellerdomain.SettlementSetting{ConfirmDays: 7}, nil
+}
+func (s *settlementStub) UpdateSettlementSetting(days int) (*resellerdomain.SettlementSetting, error) {
+	s.calls++
+	return &resellerdomain.SettlementSetting{ConfirmDays: days}, nil
+}
+
+func TestSettlementSettingsValidateDaysAndRequireAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		body  string
+		admin bool
+		valid bool
+	}{
+		{`{"confirm_days":0}`, true, true}, {`{"confirm_days":3650}`, true, true},
+		{`{"confirm_days":-1}`, true, false}, {`{"confirm_days":3651}`, true, false},
+		{`{"confirm_days":1.5}`, true, false}, {`{}`, true, false}, {`{"confirm_days":null}`, true, false},
+		{`{"confirm_days":0}`, false, false},
+	} {
+		stub := &settlementStub{}
+		h := adminhttp.NewAdminFinanceHandler(financeServiceStub{}, financeServiceStub{}).WithSettlementSettings(stub, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		if tc.admin {
+			c.Set("admin_id", uint(1))
+		}
+		c.Request = httptest.NewRequest(http.MethodPut, "/admin/resellers/settlement-settings", bytes.NewBufferString(tc.body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		h.UpdateSettlementSetting(c)
+		if (stub.calls == 1) != tc.valid {
+			t.Fatalf("body %s admin=%v status=%d calls=%d", tc.body, tc.admin, w.Code, stub.calls)
+		}
+	}
+}
+
 func (s financeServiceStub) GetUserFinanceDashboard(userID uint) (resellermodule.UserFinanceDashboard, error) {
 	return s.dashboard, s.err
 }

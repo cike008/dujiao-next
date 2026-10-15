@@ -5,6 +5,9 @@ import (
 	"strings"
 	"time"
 
+	auditlogapp "github.com/dujiao-next/internal/modules/auditlog/application"
+	"github.com/dujiao-next/internal/shared/jsonmap"
+
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
 
 	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
@@ -30,8 +33,61 @@ type AdminWithdrawReviewService interface {
 
 // AdminFinanceHandler 处理后台分销财务请求。
 type AdminFinanceHandler struct {
-	query    AdminFinanceQueryService
-	reviewer AdminWithdrawReviewService
+	query      AdminFinanceQueryService
+	reviewer   AdminWithdrawReviewService
+	settlement SettlementSettingService
+	audit      AuditRecorder
+}
+
+type SettlementSettingService interface {
+	GetSettlementSetting() (*resellerdomain.SettlementSetting, error)
+	UpdateSettlementSetting(int) (*resellerdomain.SettlementSetting, error)
+}
+
+func (h *AdminFinanceHandler) WithSettlementSettings(service SettlementSettingService, audit AuditRecorder) *AdminFinanceHandler {
+	h.settlement = service
+	h.audit = audit
+	return h
+}
+
+func (h *AdminFinanceHandler) GetSettlementSetting(c *gin.Context) {
+	if h.settlement == nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.settings_fetch_failed", nil)
+		return
+	}
+	setting, err := h.settlement.GetSettlementSetting()
+	if err != nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.settings_fetch_failed", err)
+		return
+	}
+	response.Success(c, setting)
+}
+
+func (h *AdminFinanceHandler) UpdateSettlementSetting(c *gin.Context) {
+	adminID, ok := ginutil.GetAdminID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		ConfirmDays *int `json:"confirm_days" binding:"required,min=0,max=3650"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ginutil.RespondBindError(c, err)
+		return
+	}
+	if h.settlement == nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.settings_save_failed", nil)
+		return
+	}
+	setting, err := h.settlement.UpdateSettlementSetting(*req.ConfirmDays)
+	if err != nil {
+		ginutil.RespondError(c, response.CodeInternal, "error.settings_save_failed", err)
+		return
+	}
+	if h.audit != nil {
+		_ = h.audit.Record(auditlogapp.AuthzRecord{OperatorAdminID: adminID, OperatorUsername: c.GetString("username"), Action: "reseller.settlement.update", Object: "/admin/resellers/settlement-settings", Method: "PUT", RequestID: c.GetString("request_id"), Detail: jsonmap.JSON{"confirm_days": setting.ConfirmDays}})
+	}
+	response.Success(c, setting)
 }
 
 func NewAdminFinanceHandler(query AdminFinanceQueryService, reviewer AdminWithdrawReviewService) *AdminFinanceHandler {

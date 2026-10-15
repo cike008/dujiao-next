@@ -474,6 +474,8 @@ export const adminAPI = {
     api.get('/admin/resellers/balance-accounts', { params }),
   getResellerWithdraws: (params?: Record<string, unknown>) =>
     api.get('/admin/resellers/withdraws', { params }),
+  getResellerSettlementSettings: () => api.get('/admin/resellers/settlement-settings'),
+  updateResellerSettlementSettings: (confirm_days: number) => api.put('/admin/resellers/settlement-settings', { confirm_days }),
   rejectResellerWithdraw: (id: number, data: { reason?: string }) =>
     api.post(`/admin/resellers/withdraws/${id}/reject`, data),
   payResellerWithdraw: (id: number) =>

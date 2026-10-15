@@ -57,6 +57,7 @@ func openResellerAccountingServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&resellerdomain.SettlementSetting{},
 		&userdomain.User{},
 		&orderdomain.Order{},
 		&orderdomain.OrderItem{},
@@ -350,6 +351,57 @@ func TestResellerAccountingPostOrderProfitIdempotent(t *testing.T) {
 	}
 }
 
+func TestSettlementSettingsApplyOnlyToNewProfits(t *testing.T) {
+	db := openResellerAccountingServiceTestDB(t)
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	repo := resellergormstore.New(db)
+	ledger := resellerapplication.NewAccountingLedgerService(repo, 7)
+	setting, err := ledger.GetSettlementSetting()
+	if err != nil || setting.ConfirmDays != 7 {
+		t.Fatalf("fallback: %+v %v", setting, err)
+	}
+	for _, days := range []int{-1, 3651} {
+		if _, err := ledger.UpdateSettlementSetting(days); err == nil {
+			t.Fatalf("accepted invalid days %d", days)
+		}
+	}
+	order, payment, _ := seedPaidResellerOrderSnapshot(t, db, true)
+	post := func() error {
+		return db.Transaction(func(tx *gorm.DB) error { return ledger.PostOrderProfit(repo.BindTx(tx), &order, &payment) })
+	}
+	if err := post(); err != nil {
+		t.Fatal(err)
+	}
+	old, err := repo.GetLedgerEntryByIdempotencyKey(fmt.Sprintf("order_profit:%d", order.ID))
+	if err != nil || old.AvailableAt == nil || old.Status != resellerdomain.LedgerStatusPendingConfirm {
+		t.Fatalf("old entry: %+v %v", old, err)
+	}
+	if _, err := ledger.UpdateSettlementSetting(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := post(); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, _ := repo.GetLedgerEntryByIdempotencyKey(fmt.Sprintf("order_profit:%d", order.ID))
+	if !unchanged.AvailableAt.Equal(*old.AvailableAt) || unchanged.Status != old.Status {
+		t.Fatal("historical entry changed")
+	}
+	order, payment, _ = seedPaidResellerOrderSnapshot(t, db, true)
+	if err := post(); err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := repo.GetLedgerEntryByIdempotencyKey(fmt.Sprintf("order_profit:%d", order.ID))
+	if fresh.Status != resellerdomain.LedgerStatusAvailable {
+		t.Fatalf("zero-day profit not available: %+v", fresh)
+	}
+	restarted := resellerapplication.NewAccountingLedgerService(repo, 30)
+	setting, err = restarted.GetSettlementSetting()
+	if err != nil || setting.ConfirmDays != 0 {
+		t.Fatalf("persisted zero lost: %+v %v", setting, err)
+	}
+}
+
 func TestResellerAccountingSkipsSelfDealingSnapshot(t *testing.T) {
 	db := openResellerAccountingServiceTestDB(t)
 	order, payment, _ := seedPaidResellerOrderSnapshot(t, db, false)
@@ -395,13 +447,13 @@ func TestResellerAccountingConfirmDueLedgerEntries(t *testing.T) {
 	db := openResellerAccountingServiceTestDB(t)
 	order, payment, _ := seedPaidResellerOrderSnapshot(t, db, true)
 	repo := resellergormstore.New(db)
-	svc := newResellerAccountingTestHarness(repo, 0)
+	svc := newResellerAccountingTestHarness(repo, 1)
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		return svc.ledger.PostOrderProfit(svc.store.BindTx(tx), &order, &payment)
 	}); err != nil {
 		t.Fatalf("post order profit failed: %v", err)
 	}
-	affected, err := svc.ledger.ConfirmDueLedgerEntries(time.Now().Add(time.Second))
+	affected, err := svc.ledger.ConfirmDueLedgerEntries(time.Now().AddDate(0, 0, 1).Add(time.Second))
 	if err != nil {
 		t.Fatalf("confirm due failed: %v", err)
 	}

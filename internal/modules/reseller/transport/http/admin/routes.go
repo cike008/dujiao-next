@@ -66,6 +66,8 @@ func RegisterFinanceRoutes(admin gin.IRoutes, handler *AdminFinanceHandler) {
 		panic("reseller admin finance routes: required dependency is nil")
 	}
 	admin.GET("/resellers/ledger-entries", handler.ListLedgerEntries)
+	admin.GET("/resellers/settlement-settings", handler.GetSettlementSetting)
+	admin.PUT("/resellers/settlement-settings", handler.UpdateSettlementSetting)
 	admin.GET("/resellers/balance-accounts", handler.ListBalanceAccounts)
 	admin.GET("/resellers/withdraws", handler.ListWithdraws)
 	admin.POST("/resellers/withdraws/:id/reject", handler.RejectWithdraw)

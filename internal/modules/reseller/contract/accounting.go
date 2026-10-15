@@ -174,6 +174,7 @@ type LedgerScope struct {
 // AccountingLedgerStore 是利润入账/退款扣减/到期确认所需的持久化与事务端口。
 // WithinTransaction 不得向用例暴露具体数据库连接类型。
 type AccountingLedgerStore interface {
+	SettlementSettingStore
 	BalanceAccountStore
 	WithinLedgerTransaction(fn func(store AccountingLedgerStore) error) error
 	GetOrderSnapshotByOrderID(orderID uint) (*resellerdomain.OrderSnapshot, error)

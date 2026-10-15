@@ -19,6 +19,37 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+func (s *AccountingLedgerService) GetSettlementSetting() (*resellerdomain.SettlementSetting, error) {
+	return readSettlementSetting(s.store, s.confirmDays)
+}
+
+func readSettlementSetting(store interface {
+	GetSettlementSetting() (*resellerdomain.SettlementSetting, error)
+}, fallback int) (*resellerdomain.SettlementSetting, error) {
+	setting, err := store.GetSettlementSetting()
+	if err != nil {
+		return nil, err
+	}
+	if setting == nil {
+		return &resellerdomain.SettlementSetting{ID: 1, ConfirmDays: fallback}, nil
+	}
+	if setting.ConfirmDays < 0 || setting.ConfirmDays > 3650 {
+		return nil, resellercontract.ErrWithdrawAmountInvalid
+	}
+	return setting, nil
+}
+
+func (s *AccountingLedgerService) UpdateSettlementSetting(days int) (*resellerdomain.SettlementSetting, error) {
+	if days < 0 || days > 3650 {
+		return nil, resellercontract.ErrWithdrawAmountInvalid
+	}
+	setting := &resellerdomain.SettlementSetting{ID: 1, ConfirmDays: days, UpdatedAt: time.Now()}
+	if err := s.store.SaveSettlementSetting(setting); err != nil {
+		return nil, err
+	}
+	return setting, nil
+}
+
 // AccountingLedgerService 分销利润入账、退款扣减与到期确认用例。
 type AccountingLedgerService struct {
 	store       resellercontract.AccountingLedgerStore
@@ -60,7 +91,12 @@ func (s *AccountingLedgerService) PostOrderProfit(store resellercontract.Account
 		return nil
 	}
 	now := time.Now()
-	availableAt := now.AddDate(0, 0, s.confirmDays)
+	// Read through the caller's transaction, never through the global connection.
+	setting, err := readSettlementSetting(store, s.confirmDays)
+	if err != nil {
+		return err
+	}
+	availableAt := now.AddDate(0, 0, setting.ConfirmDays)
 	orderID := order.ID
 	metadata := jsonmap.JSON{
 		"order_no":            order.OrderNo,
@@ -88,6 +124,9 @@ func (s *AccountingLedgerService) PostOrderProfit(store resellercontract.Account
 		AvailableAt:    &availableAt,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+	}
+	if setting.ConfirmDays == 0 {
+		entry.Status = resellerdomain.LedgerStatusAvailable
 	}
 	if entry.Currency == "" {
 		entry.Currency = strings.TrimSpace(order.Currency)

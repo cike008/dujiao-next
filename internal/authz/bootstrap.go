@@ -209,6 +209,8 @@ func BuiltinRoleSeeds() []RoleSeed {
 				{Object: "/admin/affiliates/withdraws/:id/pay", Action: "POST"},
 				{Object: "/admin/resellers/operations/finance", Action: "GET"},
 				{Object: "/admin/resellers/ledger-entries", Action: "GET"},
+				{Object: "/admin/resellers/settlement-settings", Action: "GET"},
+				{Object: "/admin/resellers/settlement-settings", Action: "PUT"},
 				{Object: "/admin/resellers/balance-accounts", Action: "GET"},
 				{Object: "/admin/resellers/withdraws", Action: "GET"},
 				{Object: "/admin/resellers/withdraws/:id/reject", Action: "POST"},

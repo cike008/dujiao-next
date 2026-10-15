@@ -30,6 +30,31 @@ import { adminUrl } from '@/utils/adminBase'
 const { t } = useI18n()
 const route = useRoute()
 const loading = ref(true)
+const settlementDays = ref(7)
+const settlementLoaded = ref(false)
+const settlementBusy = ref(false)
+const fetchSettlement = async () => {
+  try {
+    const response = await adminAPI.getResellerSettlementSettings()
+    settlementDays.value = response.data.data.confirm_days
+    settlementLoaded.value = true
+  } catch { notifyError(t('admin.settings.alerts.loadFailed')) }
+}
+const saveSettlement = async () => {
+  if (!settlementLoaded.value || settlementBusy.value) return
+  const days = Number(settlementDays.value)
+  if (!Number.isInteger(days) || days < 0 || days > 3650) {
+    notifyError(t('admin.resellerWithdraws.invalidDays'))
+    return
+  }
+  settlementBusy.value = true
+  try {
+    const response = await adminAPI.updateResellerSettlementSettings(days)
+    settlementDays.value = response.data.data.confirm_days
+    notifySuccess(t('admin.settings.alerts.saveSuccess'))
+  } catch { notifyError(t('admin.settings.alerts.saveFailed')) }
+  finally { settlementBusy.value = false }
+}
 const { refreshing, refreshList } = useListRefresh()
 const operating = ref(false)
 const rows = ref<AdminResellerWithdraw[]>([])
@@ -170,6 +195,7 @@ const payWithdraw = async (row: AdminResellerWithdraw) => {
 }
 
 onMounted(() => {
+  fetchSettlement()
   initFiltersFromQuery()
   fetchRows()
 })
@@ -181,6 +207,19 @@ onMounted(() => {
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-2xl font-semibold">{{ t('admin.resellerWithdraws.title') }}</h1>
       </div>
+
+      <section class="space-y-3 border-b border-border pb-5">
+        <h2 class="text-base font-semibold">{{ t('admin.resellerWithdraws.settlementSettings') }}</h2>
+        <form class="flex flex-wrap items-end gap-3" @submit.prevent="saveSettlement">
+          <div class="space-y-2">
+            <Label for="reseller-confirm-days">{{ t('admin.resellerWithdraws.confirmDays') }}</Label>
+            <Input id="reseller-confirm-days" v-model="settlementDays" type="number" min="0" max="3650" step="1" required class="w-40" :disabled="!settlementLoaded || settlementBusy" />
+          </div>
+          <Button type="submit" :disabled="!settlementLoaded || settlementBusy">{{ t('admin.resellerWithdraws.saveSettings') }}</Button>
+          <Button v-if="!settlementLoaded" type="button" variant="outline" @click="fetchSettlement">{{ t('admin.resellerWithdraws.retrySettings') }}</Button>
+        </form>
+        <p class="text-sm text-muted-foreground">{{ t('admin.resellerWithdraws.confirmDaysNote') }}</p>
+      </section>
 
       <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
         <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

@@ -23,6 +23,7 @@ func Migrate(db *gorm.DB) error {
 		return errors.New("reseller migration database is nil")
 	}
 	if err := db.AutoMigrate(
+		&resellerdomain.SettlementSetting{},
 		&resellerdomain.Profile{},
 		&resellerdomain.Domain{},
 		&resellerdomain.SiteConfig{},

@@ -13,6 +13,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func (s *Store) GetSettlementSetting() (*resellerdomain.SettlementSetting, error) {
+	var setting resellerdomain.SettlementSetting
+	err := s.db.First(&setting, 1).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &setting, err
+}
+
+func (s *Store) SaveSettlementSetting(setting *resellerdomain.SettlementSetting) error {
+	return s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"confirm_days", "updated_at"})}).Create(setting).Error
+}
+
 // CreateLedgerEntryIfNotExists 按幂等键创建分销账务流水。
 func (r *Store) CreateLedgerEntryIfNotExists(entry *resellerdomain.LedgerEntry) (bool, error) {
 	if entry == nil {

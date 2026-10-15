@@ -10,6 +10,15 @@ import (
 	"github.com/dujiao-next/internal/shared/money"
 )
 
+// SettlementSetting stores the platform-wide policy; ID is always 1.
+type SettlementSetting struct {
+	ID          uint      `gorm:"primarykey" json:"-"`
+	ConfirmDays int       `gorm:"not null" json:"confirm_days"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (SettlementSetting) TableName() string { return "reseller_settlement_settings" }
+
 // LedgerEntry 分销商资金流水。
 type LedgerEntry struct {
 	ID                uint         `gorm:"primarykey" json:"id"`

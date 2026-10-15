@@ -48,6 +48,6 @@ func New(c *container.Container) Handlers {
 		AdminFinance: adminhttp.NewAdminFinanceHandler(
 			c.ResellerAccountingQuery,
 			c.ResellerAccountingWithdraw,
-		),
+		).WithSettlementSettings(c.ResellerAccountingLedger, c.AuthzAuditService),
 	}
 }

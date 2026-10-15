@@ -3629,6 +3629,12 @@ const messages = {
       },
       resellerWithdraws: {
         title: '分销提现审核',
+        settlementSettings: '分销结算设置',
+        confirmDays: '收益确认天数',
+        confirmDaysNote: '0 表示立即确认；仅影响保存后新入账的收益，历史流水确认时间不变。提现由管理员审核并人工打款。',
+        invalidDays: '请输入 0–3650 之间的整数',
+        saveSettings: '保存设置',
+        retrySettings: '重新加载设置',
         empty: '暂无分销提现申请',
         filters: {
           keyword: '用户名 / 邮箱 / 分销商ID / 账号',
@@ -8158,6 +8164,12 @@ const messages = {
       },
       resellerWithdraws: {
         title: '分銷提現審核',
+        settlementSettings: '分銷結算設定',
+        confirmDays: '收益確認天數',
+        confirmDaysNote: '0 表示立即確認；僅影響儲存後新入帳的收益，歷史流水確認時間不變。提現由管理員審核並人工付款。',
+        invalidDays: '請輸入 0–3650 之間的整數',
+        saveSettings: '儲存設定',
+        retrySettings: '重新載入設定',
         empty: '暫無分銷提現申請',
         filters: {
           keyword: '用戶名 / 郵箱 / 分銷商ID / 帳號',
@@ -12687,6 +12699,12 @@ const messages = {
       },
       resellerWithdraws: {
         title: 'Reseller Withdraw Reviews',
+        settlementSettings: 'Reseller Settlement Settings',
+        confirmDays: 'Profit Confirmation Days',
+        confirmDaysNote: '0 confirms immediately. Changes apply only to newly posted profits; existing confirmation dates remain unchanged. Withdrawals are reviewed and paid manually.',
+        invalidDays: 'Enter an integer from 0 to 3650',
+        saveSettings: 'Save Settings',
+        retrySettings: 'Reload Settings',
         empty: 'No reseller withdraw requests',
         filters: {
           keyword: 'User / Email / Reseller ID / Account',
