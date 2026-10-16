@@ -34,10 +34,16 @@ type OrderAdminLister interface {
 
 // AdminProfileDetailHandler 处理后台分销商运营详情聚合。
 type AdminProfileDetailHandler struct {
-	directory ProfileDetailDirectory
-	products  ProductSettingSummarizer
-	finance   AdminFinanceQueryService
-	orders    OrderAdminLister
+	directory    ProfileDetailDirectory
+	products     ProductSettingSummarizer
+	finance      AdminFinanceQueryService
+	orders       OrderAdminLister
+	domainPolicy func() (string, string)
+}
+
+func (h *AdminProfileDetailHandler) WithDomainPolicy(policy func() (string, string)) *AdminProfileDetailHandler {
+	h.domainPolicy = policy
+	return h
 }
 
 func NewAdminProfileDetailHandler(
@@ -134,7 +140,12 @@ func (h *AdminProfileDetailHandler) GetProfileDetail(c *gin.Context) {
 			return
 		}
 	}
-	response.Success(c, dto.NewAdminResellerProfileDetailResp(profile, domains, siteConfig, productSummary, balances, recentOrders, recentLedgerEntries, recentWithdraws))
+	result := dto.NewAdminResellerProfileDetailResp(profile, domains, siteConfig, productSummary, balances, recentOrders, recentLedgerEntries, recentWithdraws)
+	if h.domainPolicy != nil {
+		base, _ := h.domainPolicy()
+		result.SystemDomainEnabled = base != ""
+	}
+	response.Success(c, result)
 }
 
 func respondAdminProfileDetailError(c *gin.Context, err error) {

@@ -63,3 +63,27 @@ func TestAdminProfileDetailHandlerMapsOrderNotFound(t *testing.T) {
 		t.Fatalf("expected not found, body=%s", recorder.Body.String())
 	}
 }
+
+func TestAdminProfileDetailReflectsPlatformDomainPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, base := range []string{"", "moshshop.com"} {
+		h := NewAdminProfileDetailHandler(profileDetailDirectoryStub{profile: &resellerdomain.Profile{ID: 1}}, nil, nil, nil).
+			WithDomainPolicy(func() (string, string) { return base, "" })
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/admin/resellers/profiles/1", nil)
+		c.Params = gin.Params{{Key: "id", Value: "1"}}
+		h.GetProfileDetail(c)
+		var result struct {
+			Data struct {
+				Enabled bool `json:"system_domain_enabled"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Data.Enabled != (base != "") {
+			t.Fatalf("policy mismatch for base %q", base)
+		}
+	}
+}

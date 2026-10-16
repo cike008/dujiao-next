@@ -335,7 +335,7 @@ onMounted(fetchDetail)
         </TabsContent>
 
         <TabsContent value="domains" class="mt-0 space-y-4">
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div v-if="detail?.system_domain_enabled === true" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div class="rounded-xl border border-border bg-card p-4">
               <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>

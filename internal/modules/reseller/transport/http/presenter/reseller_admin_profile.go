@@ -44,6 +44,7 @@ type AdminResellerFinanceSummaryResp struct {
 }
 
 type AdminResellerProfileDetailResp struct {
+	SystemDomainEnabled bool                            `json:"system_domain_enabled"`
 	Profile             *AdminResellerProfileResp       `json:"profile"`
 	Domains             []ResellerDomainResp            `json:"domains"`
 	SiteConfig          *AdminResellerSiteConfigResp    `json:"site_config,omitempty"`

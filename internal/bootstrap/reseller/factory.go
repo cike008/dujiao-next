@@ -37,7 +37,7 @@ func New(c *container.Container) Handlers {
 		),
 		AdminProfileDetail: adminhttp.NewAdminProfileDetailHandler(
 			c.ResellerStore, c.ResellerProductSettingService, c.ResellerAccountingQuery, c.ResellerOrderService,
-		),
+		).WithDomainPolicy(c.ResellerManagementService.SystemDomainPolicy),
 		AdminSiteConfig: adminhttp.NewAdminSiteConfigHandler(
 			c.ResellerSiteConfigService, c.ResellerStore, c.AuthzAuditService,
 		),

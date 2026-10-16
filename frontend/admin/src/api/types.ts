@@ -1080,6 +1080,7 @@ export interface AdminResellerProfileDetailWithdraw {
 }
 
 export interface AdminResellerProfileDetail {
+  system_domain_enabled?: boolean
   profile: AdminResellerProfile
   domains: AdminResellerDomain[]
   site_config?: AdminResellerSiteConfig
