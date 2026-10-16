@@ -1216,6 +1216,9 @@ watch(
               class="space-y-3"
               @submit.prevent="submitManualRefund"
             >
+              <p class="text-sm text-muted-foreground leading-relaxed">
+                {{ t('admin.orders.manualRefundTitle') }}
+              </p>
               <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
                 <Input
                   class="min-w-0"
