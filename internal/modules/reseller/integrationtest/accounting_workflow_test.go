@@ -3,6 +3,8 @@ package integrationtest
 import (
 	"errors"
 	"fmt"
+	admindomain "github.com/dujiao-next/internal/modules/identity/admin/domain"
+	"os"
 	"testing"
 	"time"
 
@@ -29,6 +31,7 @@ import (
 	"github.com/dujiao-next/internal/shared/money"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -801,6 +804,100 @@ func TestWithdrawPayRevalidatesRiskAndLockedFunds(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestConcurrentWithdrawalsAndRepeatedReviewPreserveFunds(t *testing.T) {
+	db := openResellerAccountingServiceTestDB(t)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	verifyConcurrentWithdrawalFunds(t, db)
+}
+
+func TestPostgresConcurrentWithdrawalsAndRepeatedReviewPreserveFunds(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN not set; requires disposable PostgreSQL database")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	sqlDB.SetMaxOpenConns(4)
+	if err := db.AutoMigrate(&userdomain.User{}, &resellerdomain.Profile{}, &resellerdomain.LedgerEntry{}, &resellerdomain.BalanceAccount{}, &resellerdomain.WithdrawRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	verifyConcurrentWithdrawalFunds(t, db)
+}
+
+func verifyConcurrentWithdrawalFunds(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.AutoMigrate(&admindomain.Admin{}); err != nil {
+		t.Fatal(err)
+	}
+	admin := admindomain.Admin{Username: fmt.Sprintf("acceptance-%d", time.Now().UnixNano()), PasswordHash: "test-only"}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	profile := seedResellerAccountingProfile(t, db)
+	row := resellerdomain.LedgerEntry{ResellerID: profile.ID, Type: resellerdomain.LedgerTypeOrderProfit, Amount: money.FromDecimal(decimal.NewFromInt(10)), Currency: "USD", IdempotencyKey: fmt.Sprintf("concurrent-withdraw:%d", profile.ID), Status: resellerdomain.LedgerStatusAvailable}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := resellergormstore.New(db)
+	svc := newResellerAccountingTestHarness(repo, 0)
+	type result struct {
+		request *resellerdomain.WithdrawRequest
+		err     error
+	}
+	results := make(chan result, 2)
+	start := make(chan struct{})
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			req, err := svc.withdraw.ApplyUserWithdraw(profile.UserID, resellercontract.WithdrawApplyInput{Amount: decimal.NewFromInt(10), Currency: "USD", Channel: "bank", Account: "fixture"})
+			results <- result{req, err}
+		}()
+	}
+	close(start)
+	var accepted *resellerdomain.WithdrawRequest
+	successes := 0
+	for i := 0; i < 2; i++ {
+		value := <-results
+		if value.err == nil {
+			successes++
+			accepted = value.request
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("expected one accepted withdrawal, got %d", successes)
+	}
+	if _, err := svc.withdraw.ReviewWithdraw(admin.ID, accepted.ID, resellercontract.WithdrawActionPay, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{resellercontract.WithdrawActionPay, resellercontract.WithdrawActionReject} {
+		if _, err := svc.withdraw.ReviewWithdraw(admin.ID, accepted.ID, action, "duplicate"); err == nil {
+			t.Fatalf("repeated review accepted: %s", action)
+		}
+	}
+	stored, err := repo.GetWithdrawRequestByID(accepted.ID)
+	if err != nil || stored.Status != resellerdomain.WithdrawStatusPaid {
+		t.Fatalf("paid status changed: %+v %v", stored, err)
+	}
+	var paid []resellerdomain.LedgerEntry
+	if err := db.Where("reseller_id = ?", profile.ID).Find(&paid).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(paid) != 1 || paid[0].Status != resellerdomain.LedgerStatusWithdrawn || paid[0].Amount.String() != "10.00" {
+		t.Fatalf("funds changed: %+v", paid)
 	}
 }
 

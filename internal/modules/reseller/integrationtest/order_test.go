@@ -386,6 +386,19 @@ func TestResellerOrderServiceDetailUsesItemSnapshot(t *testing.T) {
 	}
 }
 
+func TestResellerOrderDetailCannotReadAnotherResellersOrder(t *testing.T) {
+	db := openResellerOrderServiceTestDB(t)
+	owner, ownOrder, _ := seedResellerOrderFixture(t, db, "isolation-owner@example.test")
+	_, otherOrder, _ := seedResellerOrderFixture(t, db, "isolation-other@example.test")
+	svc := NewResellerOrderService(resellergormstore.New(db))
+	if detail, err := svc.GetUserOrderDetail(owner.UserID, ownOrder.OrderNo); err != nil || detail == nil {
+		t.Fatalf("own order unavailable: %v", err)
+	}
+	if detail, err := svc.GetUserOrderDetail(owner.UserID, otherOrder.OrderNo); err == nil || detail != nil {
+		t.Fatalf("cross-reseller order disclosed: %+v %v", detail, err)
+	}
+}
+
 func TestResellerOrderServiceDetailAggregatesItemsFromChildOrders(t *testing.T) {
 	db := openResellerOrderServiceTestDB(t)
 	profile, parent, childItems := seedResellerOrderWithChildItemsFixture(t, db, "reseller-child-items@example.test")
