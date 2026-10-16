@@ -838,6 +838,155 @@ func TestPostgresConcurrentWithdrawalsAndRepeatedReviewPreserveFunds(t *testing.
 	verifyConcurrentWithdrawalFunds(t, db)
 }
 
+func TestPostgresConcurrentRefundDeductionsPreserveProfit(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN not set; requires disposable PostgreSQL database")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	sqlDB.SetMaxOpenConns(4)
+	if err := db.AutoMigrate(&resellerdomain.SettlementSetting{}, &userdomain.User{}, &admindomain.Admin{}, &orderdomain.Order{}, &orderdomain.OrderItem{}, &fulfillmentdomain.Fulfillment{}, &paymentdomain.PaymentChannel{}, &paymentdomain.Payment{}, &orderdomain.OrderRefundRecord{}, &resellerdomain.Profile{}, &resellerdomain.OrderSnapshot{}, &resellerdomain.LedgerEntry{}, &resellerdomain.BalanceAccount{}, &resellerdomain.WithdrawRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, duplicate := range []bool{true, false} {
+		t.Run(fmt.Sprintf("duplicate=%v", duplicate), func(t *testing.T) {
+			order, payment, snapshot := seedPaidResellerOrderSnapshot(t, db, true)
+			repo := resellergormstore.New(db)
+			svc := newResellerAccountingTestHarness(repo, 0)
+			if err := db.Transaction(func(tx *gorm.DB) error { return svc.ledger.PostOrderProfit(svc.store.BindTx(tx), &order, &payment) }); err != nil {
+				t.Fatal(err)
+			}
+			first := orderdomain.OrderRefundRecord{UserID: order.UserID, OrderID: order.ID, Type: constants.OrderRefundTypeManual, Currency: "USD", Amount: money.FromDecimal(decimal.NewFromInt(65))}
+			if err := db.Create(&first).Error; err != nil {
+				t.Fatal(err)
+			}
+			second := first
+			if !duplicate {
+				second.ID = 0
+				if err := db.Create(&second).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			start := make(chan struct{})
+			results := make(chan error, 2)
+			for _, record := range []orderdomain.OrderRefundRecord{first, second} {
+				go func(record orderdomain.OrderRefundRecord) {
+					<-start
+					results <- db.Transaction(func(tx *gorm.DB) error {
+						locked, err := ordergormstore.New(tx, "postgres").GetByIDForUpdate(order.ID)
+						if err != nil {
+							return err
+						}
+						var applied int64
+						if err := tx.Model(&resellerdomain.LedgerEntry{}).Where("idempotency_key = ?", fmt.Sprintf("refund_deduct:%d", record.ID)).Count(&applied).Error; err != nil {
+							return err
+						}
+						if applied != 0 {
+							return nil
+						}
+						before := locked.RefundedAmount.Decimal
+						if err := svc.ledger.HandleRefundDeduct(svc.store.BindTx(tx), locked, &record, before); err != nil {
+							return err
+						}
+						return tx.Model(&orderdomain.Order{}).Where("id = ?", order.ID).Update("refunded_amount", before.Add(record.Amount.Decimal).StringFixed(2)).Error
+					})
+				}(record)
+			}
+			close(start)
+			for i := 0; i < 2; i++ {
+				if err := <-results; err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := "-30.00"
+			if duplicate {
+				want = "-15.00"
+			}
+			deduct, err := repo.SumLedgerAmountByOrderAndType(order.ID, resellerdomain.LedgerTypeRefundDeduct)
+			if err != nil || deduct.StringFixed(2) != want {
+				t.Fatalf("deduct=%s want=%s err=%v", deduct, want, err)
+			}
+			var balance resellerdomain.BalanceAccount
+			if err := db.Where("reseller_id = ? AND currency = ?", snapshot.ResellerID, "USD").First(&balance).Error; err != nil {
+				t.Fatal(err)
+			}
+			if balance.AvailableAmountCache.Decimal.IsNegative() {
+				t.Fatalf("unexpected negative balance: %+v", balance)
+			}
+		})
+	}
+	t.Run("refund_races_with_withdrawal", func(t *testing.T) {
+		order, payment, snapshot := seedPaidResellerOrderSnapshot(t, db, true)
+		repo := resellergormstore.New(db)
+		svc := newResellerAccountingTestHarness(repo, 0)
+		if err := db.Transaction(func(tx *gorm.DB) error { return svc.ledger.PostOrderProfit(svc.store.BindTx(tx), &order, &payment) }); err != nil {
+			t.Fatal(err)
+		}
+		admin := admindomain.Admin{Username: fmt.Sprintf("refund-review-%d", time.Now().UnixNano()), PasswordHash: "test-only"}
+		if err := db.Create(&admin).Error; err != nil {
+			t.Fatal(err)
+		}
+		record := orderdomain.OrderRefundRecord{UserID: order.UserID, OrderID: order.ID, Type: constants.OrderRefundTypeManual, Currency: "USD", Amount: money.FromDecimal(decimal.NewFromInt(130))}
+		if err := db.Create(&record).Error; err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		refundDone := make(chan error, 1)
+		type withdrawalResult struct {
+			request *resellerdomain.WithdrawRequest
+			err     error
+		}
+		withdrawDone := make(chan withdrawalResult, 1)
+		go func() {
+			<-start
+			refundDone <- db.Transaction(func(tx *gorm.DB) error {
+				locked, err := ordergormstore.New(tx, "postgres").GetByIDForUpdate(order.ID)
+				if err != nil {
+					return err
+				}
+				return svc.ledger.HandleRefundDeduct(svc.store.BindTx(tx), locked, &record, decimal.Zero)
+			})
+		}()
+		go func() {
+			<-start
+			req, err := svc.withdraw.ApplyWithdraw(snapshot.ResellerID, resellercontract.WithdrawApplyInput{Amount: decimal.NewFromInt(30), Currency: "USD", Channel: "bank", Account: "fixture"})
+			withdrawDone <- withdrawalResult{req, err}
+		}()
+		close(start)
+		if err := <-refundDone; err != nil {
+			t.Fatal(err)
+		}
+		withdrawal := <-withdrawDone
+		if withdrawal.err != nil && !errors.Is(withdrawal.err, resellercontract.ErrWithdrawInsufficient) {
+			t.Fatalf("unexpected withdrawal error: %v", withdrawal.err)
+		}
+		if withdrawal.err == nil {
+			if _, err := svc.withdraw.ReviewWithdraw(admin.ID, withdrawal.request.ID, resellercontract.WithdrawActionPay, "after refund"); err == nil {
+				t.Fatal("refunded profit was approved for payout")
+			}
+			if _, err := svc.withdraw.ReviewWithdraw(admin.ID, withdrawal.request.ID, resellercontract.WithdrawActionReject, "refunded"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var paid int64
+		if err := db.Model(&resellerdomain.LedgerEntry{}).Where("reseller_id = ? AND status = ?", snapshot.ResellerID, resellerdomain.LedgerStatusWithdrawn).Count(&paid).Error; err != nil || paid != 0 {
+			t.Fatalf("paid entries=%d err=%v", paid, err)
+		}
+		available, err := repo.SumLedgerAmount(snapshot.ResellerID, "USD", []string{resellerdomain.LedgerStatusAvailable})
+		if err != nil || !available.IsZero() {
+			t.Fatalf("net available=%s err=%v", available, err)
+		}
+	})
+}
+
 func verifyConcurrentWithdrawalFunds(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.AutoMigrate(&admindomain.Admin{}); err != nil {
