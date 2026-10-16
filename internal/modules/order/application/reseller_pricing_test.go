@@ -24,6 +24,27 @@ type supplyPriceStub struct {
 	owner  uint
 }
 
+func TestResellerStaleTenantCannotBypassDisabledProfile(t *testing.T) {
+	profile := testResellerProfile()
+	repo := &resellerPricingRepoStub{profile: profile}
+	resolver := NewResellerPricingResolver(repo)
+	staleTenant := testResellerTenant()
+	profile.Status = resellerdomain.ProfileStatusDisabled
+	if _, err := resolver.ApplyToOrderBuildResult(staleTenant, 1234, &orderBuildResult{}); !errors.Is(err, ErrResellerProductNotListed) {
+		t.Fatalf("stale tenant accepted order after disable: %v", err)
+	}
+	if _, err := resolver.LoadDisplayPricingBatch(staleTenant, nil); !errors.Is(err, ErrResellerProductNotListed) {
+		t.Fatalf("stale tenant accepted catalog after disable: %v", err)
+	}
+	if repo.profileQueries != 2 || repo.settingsQueries != 0 {
+		t.Fatalf("requests must recheck profile before loading prices: %+v", repo)
+	}
+	profile.Status = resellerdomain.ProfileStatusActive
+	if _, err := resolver.LoadDisplayPricingBatch(staleTenant, nil); err != nil {
+		t.Fatalf("restored profile remained unavailable: %v", err)
+	}
+}
+
 func (s *supplyPriceStub) ResolveSupplyPrices(owner uint, _ []uint) (resellercontract.SupplyPrices, error) {
 	s.owner = owner
 	return s.prices, s.err

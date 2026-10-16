@@ -58,10 +58,8 @@ func (r *DomainResolver) ResolveHost(ctx context.Context, rawHost string) (resel
 	if _, ok := r.mainHosts[host]; ok {
 		return resellercontract.MainTenantContext(host), nil
 	}
-	var cached cache.ResellerDomainCacheValue
-	if hit, err := cache.GetResellerDomain(ctx, host, &cached); err == nil && hit {
-		return resellercontract.ResellerTenantContext(host, cached.ResellerID, cached.ResellerUserID, cached.PrimaryDomain), nil
-	}
+	// Positive cache entries cannot authorize a tenant: invalidation may fail
+	// during suspension, so each request must verify current database state.
 	if hit, err := cache.GetResellerDomainNotFound(ctx, host); err == nil && hit {
 		return resellercontract.UnavailableTenantContext(host, DomainUnavailableNotFound), nil
 	}
@@ -77,14 +75,5 @@ func (r *DomainResolver) ResolveHost(ctx context.Context, rawHost string) (resel
 		return resellercontract.UnavailableTenantContext(host, DomainUnavailableNotFound), nil
 	}
 	primaryDomain := strings.TrimSpace(domain.Domain)
-	value := cache.ResellerDomainCacheValue{
-		ResellerID:         domain.ResellerID,
-		ResellerUserID:     domain.Profile.UserID,
-		Domain:             domain.Domain,
-		PrimaryDomain:      primaryDomain,
-		Status:             domain.Status,
-		VerificationStatus: domain.VerificationStatus,
-	}
-	_ = cache.SetResellerDomain(ctx, host, value)
 	return resellercontract.ResellerTenantContext(host, domain.ResellerID, domain.Profile.UserID, primaryDomain), nil
 }

@@ -2,10 +2,15 @@ package middleware
 
 import (
 	"context"
+	"errors"
+	"github.com/dujiao-next/internal/modules/identity/jwttoken"
+	userauthapp "github.com/dujiao-next/internal/modules/identity/userauth/application"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	resellermodule "github.com/dujiao-next/internal/modules/reseller/application"
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
@@ -15,6 +20,43 @@ import (
 type middlewareResolverStub struct {
 	tenant resellercontract.TenantContext
 	err    error
+}
+
+func TestUnavailableResellerBlocksPreviouslyValidAccessToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo, user := setupUserMiddlewareTestRepo(t)
+	token := signToken(t, userauthapp.UserJWTClaims{
+		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion,
+		ResellerID: 9, Typ: jwttoken.TypeAccess,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	})
+	for _, tc := range []struct {
+		name     string
+		resolver middlewareResolverStub
+		want     int
+	}{
+		{"active", middlewareResolverStub{tenant: resellercontract.ResellerTenantContext("shop.example.test", 9, 100, "shop.example.test")}, http.StatusOK},
+		{"disabled", middlewareResolverStub{tenant: resellercontract.UnavailableTenantContext("shop.example.test", "not_found")}, http.StatusNotFound},
+		{"database_failure", middlewareResolverStub{err: errors.New("database unavailable")}, http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			r := gin.New()
+			r.Use(ResellerTenantMiddleware(tc.resolver), UserJWTAuthMiddleware(middlewareTestSecret, repo))
+			r.GET("/me/orders", func(c *gin.Context) { called = true; c.Status(http.StatusOK) })
+			req := httptest.NewRequest(http.MethodGet, "/me/orders", nil)
+			req.Host = "shop.example.test"
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.want || called != (tc.want == http.StatusOK) {
+				t.Fatalf("status=%d handler_called=%v body=%s", w.Code, called, w.Body.String())
+			}
+		})
+	}
 }
 
 func (s middlewareResolverStub) ResolveRequest(ctx context.Context, req *http.Request) (resellercontract.TenantContext, error) {

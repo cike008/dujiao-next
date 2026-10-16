@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	resellerapplication "github.com/dujiao-next/internal/modules/reseller/application"
 	resellercontract "github.com/dujiao-next/internal/modules/reseller/contract"
 	"strings"
 	"testing"
@@ -51,6 +52,58 @@ func newResellerManagementServiceForTest(db *gorm.DB) *ResellerManagementService
 		SubdomainBase:    "shop.example.test",
 		MainHosts:        []string{"main.example.test"},
 	})
+}
+
+func TestResellerDisableRestorePreservesDomainAndBranding(t *testing.T) {
+	db := openResellerManagementServiceTestDB(t)
+	user := seedResellerManagementUser(t, db, "lifecycle@example.test")
+	svc := newResellerManagementServiceForTest(db)
+	profile, err := svc.ApplyUserReseller(user.ID, ResellerApplyInput{Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ApproveProfile(context.Background(), 9, profile.ID, ResellerApproveInput{}); err != nil {
+		t.Fatal(err)
+	}
+	domain := resellerdomain.Domain{
+		ResellerID: profile.ID, Domain: "lifecycle.customer.example", Type: resellerdomain.DomainTypeCustom,
+		Status: resellerdomain.DomainStatusActive, VerificationStatus: resellerdomain.DomainVerificationVerified, IsPrimary: true,
+	}
+	if err := db.Create(&domain).Error; err != nil {
+		t.Fatal(err)
+	}
+	store := resellergormstore.New(db)
+	if _, err := store.UpsertSiteConfig(resellerdomain.SiteConfig{ResellerID: profile.ID}); err != nil {
+		t.Fatal(err)
+	}
+	resolver := resellerapplication.NewDomainResolver(store, config.ResellerConfig{Enabled: true})
+	assertAvailable := func(want bool) {
+		t.Helper()
+		tenant, err := resolver.ResolveHost(context.Background(), domain.Domain)
+		if err != nil || tenant.IsReseller() != want || tenant.IsMain {
+			t.Fatalf("availability=%v: tenant=%+v err=%v", want, tenant, err)
+		}
+	}
+	assertAvailable(true)
+	if _, err := svc.DisableProfile(9, profile.ID, "test suspension"); err != nil {
+		t.Fatal(err)
+	}
+	assertAvailable(false)
+	if _, err := svc.RestoreProfile(9, profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertAvailable(true)
+	var domains int64
+	if err := db.Model(&resellerdomain.Domain{}).Where("reseller_id = ?", profile.ID).Count(&domains).Error; err != nil || domains != 1 {
+		t.Fatalf("domain records changed: count=%d err=%v", domains, err)
+	}
+	preserved, err := store.GetDomainByID(domain.ID)
+	if err != nil || preserved.Status != domain.Status || !preserved.IsPrimary {
+		t.Fatalf("domain binding changed: %+v err=%v", preserved, err)
+	}
+	if branding, err := store.GetSiteConfigByResellerID(profile.ID); err != nil || branding == nil {
+		t.Fatalf("branding was removed: %+v err=%v", branding, err)
+	}
 }
 
 func TestResellerManagementApplyCreatesPendingAndReapplyRejected(t *testing.T) {

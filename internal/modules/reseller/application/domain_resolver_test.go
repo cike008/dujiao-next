@@ -3,7 +3,10 @@ package application
 import (
 	"context"
 	"errors"
+	"github.com/dujiao-next/internal/cache"
 	"net/http"
+	"os"
+	"strconv"
 	"testing"
 
 	resellerdomain "github.com/dujiao-next/internal/modules/reseller/domain"
@@ -144,5 +147,66 @@ func TestResellerDomainResolverRepoError(t *testing.T) {
 	_, err := resolver.ResolveHost(context.Background(), "shop.example.test")
 	if err == nil {
 		t.Fatal("expected repository error")
+	}
+}
+
+func TestResellerDomainResolverRechecksPreviouslyActiveHost(t *testing.T) {
+	repo := &resellerResolverRepoStub{domain: &resellerdomain.Domain{
+		ResellerID: 7, Domain: "recheck.example.test",
+		Profile: &resellerdomain.Profile{ID: 7, UserID: 88, Status: resellerdomain.ProfileStatusActive},
+	}}
+	resolver := NewDomainResolver(repo, config.ResellerConfig{Enabled: true})
+	ctx := context.Background()
+	if tenant, err := resolver.ResolveHost(ctx, repo.domain.Domain); err != nil || !tenant.IsReseller() {
+		t.Fatalf("active host rejected: %+v %v", tenant, err)
+	}
+	repo.domain.Profile.Status = resellerdomain.ProfileStatusDisabled
+	if tenant, err := resolver.ResolveHost(ctx, repo.domain.Domain); err != nil || !tenant.Unavailable {
+		t.Fatalf("disabled host accepted: %+v %v", tenant, err)
+	}
+	repo.domain.Profile.Status = resellerdomain.ProfileStatusActive
+	repo.err = errors.New("database unavailable")
+	if tenant, err := resolver.ResolveHost(ctx, repo.domain.Domain); err == nil || tenant.IsReseller() {
+		t.Fatalf("database failure authorized tenant: %+v %v", tenant, err)
+	}
+	if repo.calls != 3 {
+		t.Fatalf("expected authoritative lookup on every request, got %d", repo.calls)
+	}
+}
+
+func TestResellerDomainResolverIgnoresStaleRedisAuthorization(t *testing.T) {
+	portText := os.Getenv("TEST_RESELLER_REDIS_PORT")
+	if portText == "" {
+		t.Skip("TEST_RESELLER_REDIS_PORT is not set")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.InitRedis(&config.RedisConfig{Enabled: true, Host: "127.0.0.1", Port: port, Prefix: "reseller-revocation-test"}); err != nil {
+		t.Fatal(err)
+	}
+	client := cache.Client()
+	t.Cleanup(func() { _ = client.Close(); _ = cache.InitRedis(nil) })
+	ctx := context.Background()
+	host := "stale-cache.example.test"
+	t.Cleanup(func() { _ = cache.DelResellerDomain(ctx, host) })
+	if err := cache.SetResellerDomain(ctx, host, cache.ResellerDomainCacheValue{ResellerID: 7, ResellerUserID: 88, PrimaryDomain: host}); err != nil {
+		t.Fatal(err)
+	}
+	var cached cache.ResellerDomainCacheValue
+	if hit, err := cache.GetResellerDomain(ctx, host, &cached); err != nil || !hit {
+		t.Fatalf("stale cache fixture missing: hit=%v err=%v", hit, err)
+	}
+	repo := &resellerResolverRepoStub{domain: &resellerdomain.Domain{
+		ResellerID: 7, Domain: host,
+		Profile: &resellerdomain.Profile{ID: 7, UserID: 88, Status: resellerdomain.ProfileStatusDisabled},
+	}}
+	resolver := NewDomainResolver(repo, config.ResellerConfig{Enabled: true})
+	if tenant, err := resolver.ResolveHost(ctx, host); err != nil || !tenant.Unavailable || tenant.IsReseller() {
+		t.Fatalf("stale Redis authorization bypassed suspension: %+v %v", tenant, err)
+	}
+	if repo.calls != 1 {
+		t.Fatalf("database state not checked: calls=%d", repo.calls)
 	}
 }
