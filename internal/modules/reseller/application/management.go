@@ -23,6 +23,8 @@ import (
 type ManagementService struct {
 	store resellercontract.ManagementStore
 	cfg   config.ResellerConfig
+	// lookupTXT 解析 DNS TXT 记录，用于自定义域名所有权校验；测试中可替换。
+	lookupTXT func(ctx context.Context, name string) ([]string, error)
 }
 
 type ResellerApplyInput struct {
@@ -51,7 +53,45 @@ type ResellerApproveResult struct {
 }
 
 func NewManagementService(store resellercontract.ManagementStore, cfg config.ResellerConfig) *ManagementService {
-	return &ManagementService{store: store, cfg: cfg}
+	return &ManagementService{store: store, cfg: cfg, lookupTXT: net.DefaultResolver.LookupTXT}
+}
+
+// SetTXTResolver 替换 TXT 解析函数（主要用于测试）。
+func (s *ManagementService) SetTXTResolver(fn func(ctx context.Context, name string) ([]string, error)) {
+	if s != nil && fn != nil {
+		s.lookupTXT = fn
+	}
+}
+
+// verificationTXTName 返回自定义域名所有权校验所用的 TXT 记录名。
+func verificationTXTName(domain string) string {
+	return "_moshshop-verify." + domain
+}
+
+// verifyCustomDomainOwnership 校验自定义域名的 DNS TXT 记录是否包含提交时签发的令牌。
+// 仅对尚未验证、且持有令牌的自定义域名生效；系统子域与已验证域名不重复校验。
+func (s *ManagementService) verifyCustomDomainOwnership(ctx context.Context, domain *resellerdomain.Domain) error {
+	if domain == nil || domain.Type != resellerdomain.DomainTypeCustom ||
+		domain.VerificationStatus == resellerdomain.DomainVerificationVerified ||
+		strings.TrimSpace(domain.VerificationToken) == "" {
+		return nil
+	}
+	if s.lookupTXT == nil {
+		return resellercontract.ErrDomainVerificationFailed
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	records, err := s.lookupTXT(lookupCtx, verificationTXTName(domain.Domain))
+	if err != nil {
+		return resellercontract.ErrDomainVerificationFailed
+	}
+	want := strings.TrimSpace(domain.VerificationToken)
+	for _, record := range records {
+		if strings.Trim(strings.TrimSpace(record), "\"") == want {
+			return nil
+		}
+	}
+	return resellercontract.ErrDomainVerificationFailed
 }
 
 func (s *ManagementService) GetUserManagementSnapshot(userID uint) (*resellerdomain.Profile, []resellerdomain.Domain, bool, error) {
@@ -396,6 +436,16 @@ func (s *ManagementService) submitUserDomain(userID uint, domain, domainType str
 }
 
 func (s *ManagementService) ApproveDomain(ctx context.Context, adminID, domainID uint) (*resellerdomain.Domain, error) {
+	if s != nil && s.store != nil && domainID != 0 {
+		// DNS 查询不放进数据库事务；校验通过后再进入状态更新。
+		current, err := s.store.GetDomainByID(domainID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.verifyCustomDomainOwnership(ctx, current); err != nil {
+			return nil, err
+		}
+	}
 	return s.updateDomainStatus(ctx, adminID, domainID, resellerdomain.DomainStatusActive)
 }
 

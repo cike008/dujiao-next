@@ -310,12 +310,48 @@ func TestResellerManagementSubmitAndApproveCustomDomain(t *testing.T) {
 		t.Fatal("domain ownership tokens must be independent")
 	}
 
+	// 没有 TXT 记录、记录错误、DNS 查询失败时都不能通过审核。
+	for name, resolver := range map[string]func(context.Context, string) ([]string, error){
+		"no record": func(context.Context, string) ([]string, error) { return nil, nil },
+		"wrong token": func(context.Context, string) ([]string, error) {
+			return []string{"moshshop-verification=deadbeef"}, nil
+		},
+		"dns error":    func(context.Context, string) ([]string, error) { return nil, errors.New("lookup failed") },
+		"other domain": func(_ context.Context, n string) ([]string, error) { return []string{n}, nil },
+	} {
+		svc.SetTXTResolver(resolver)
+		if _, err := svc.ApproveDomain(context.Background(), 9, domain.ID); !errors.Is(err, resellercontract.ErrDomainVerificationFailed) {
+			t.Fatalf("%s: approval must fail verification, got %v", name, err)
+		}
+		pending, err := resellergormstore.New(db).GetDomainByID(domain.ID)
+		if err != nil || pending.Status != resellerdomain.DomainStatusPendingReview || pending.VerificationStatus != resellerdomain.DomainVerificationPending {
+			t.Fatalf("%s: failed verification must leave the domain pending: %+v err=%v", name, pending, err)
+		}
+	}
+
+	var queried string
+	svc.SetTXTResolver(func(_ context.Context, name string) ([]string, error) {
+		queried = name
+		return []string{"v=spf1 -all", "\"" + domain.VerificationToken + "\""}, nil
+	})
 	approved, err := svc.ApproveDomain(context.Background(), 9, domain.ID)
 	if err != nil {
 		t.Fatalf("ApproveDomain failed: %v", err)
 	}
+	if queried != "_moshshop-verify.shop.customer.example" {
+		t.Fatalf("unexpected TXT name queried: %q", queried)
+	}
 	if approved.Status != resellerdomain.DomainStatusActive || approved.VerificationStatus != resellerdomain.DomainVerificationVerified || approved.VerifiedAt == nil {
 		t.Fatalf("unexpected approved domain: %+v", approved)
+	}
+
+	// 已验证的域名重新启用时不再重复查询 DNS。
+	if _, err := svc.DisableDomain(context.Background(), 9, domain.ID); err != nil {
+		t.Fatalf("DisableDomain failed: %v", err)
+	}
+	svc.SetTXTResolver(func(context.Context, string) ([]string, error) { return nil, errors.New("must not be called") })
+	if _, err := svc.ApproveDomain(context.Background(), 9, domain.ID); err != nil {
+		t.Fatalf("re-enabling a verified domain must not require DNS: %v", err)
 	}
 }
 

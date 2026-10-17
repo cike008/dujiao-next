@@ -22,6 +22,8 @@ func respondAdminManagementError(c *gin.Context, err error) {
 		errors.Is(err, resellercontract.ErrDomainMainHostNotAllowed),
 		errors.Is(err, resellercontract.ErrDomainConflict):
 		ginutil.RespondError(c, response.CodeBadRequest, "error.bad_request", nil)
+	case errors.Is(err, resellercontract.ErrDomainVerificationFailed):
+		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_domain_txt_unverified", nil)
 	case errors.Is(err, resellercontract.ErrSubdomainReserved):
 		ginutil.RespondError(c, response.CodeBadRequest, "error.reseller_subdomain_reserved", nil)
 	case errors.Is(err, resellercontract.ErrSubdomainSuffixInvalid):
