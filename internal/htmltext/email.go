@@ -1,6 +1,7 @@
 package htmltext
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -29,6 +30,26 @@ func ToEmailText(raw string) string {
 		return normalizeEmailLines(raw)
 	}
 	var out strings.Builder
+	var preformatted []string
+	var preText func(*html.Node) string
+	preText = func(n *html.Node) string {
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "script", "style", "button", "noscript", "iframe", "template":
+				return ""
+			case "br":
+				return "\n"
+			}
+		}
+		if n.Type == html.TextNode {
+			return n.Data
+		}
+		var text strings.Builder
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			text.WriteString(preText(child))
+		}
+		return text.String()
+	}
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
@@ -40,6 +61,12 @@ func ToEmailText(raw string) string {
 				if attr.Key == "data-copy-text" {
 					return
 				}
+			}
+			if n.Data == "pre" {
+				marker := fmt.Sprintf("\x00PRE%d\x00", len(preformatted))
+				preformatted = append(preformatted, strings.Trim(preText(n), "\r\n"))
+				out.WriteString("\n" + marker + "\n")
+				return
 			}
 		}
 		block := n.Type == html.ElementNode && strings.Contains("|p|div|section|article|h1|h2|h3|h4|h5|h6|ul|ol|li|tr|hr|br|", "|"+n.Data+"|")
@@ -75,7 +102,11 @@ func ToEmailText(raw string) string {
 		}
 	}
 	walk(doc)
-	return normalizeEmailLines(out.String())
+	text := normalizeEmailLines(out.String())
+	for i, pre := range preformatted {
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00PRE%d\x00", i), pre)
+	}
+	return text
 }
 
 func normalizeEmailLines(text string) string {

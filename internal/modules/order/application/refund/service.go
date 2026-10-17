@@ -25,6 +25,7 @@ import (
 
 // AdminManualRefundInput 管理员手动退款输入（不处理钱包/支付渠道）
 type AdminManualRefundInput struct {
+	RequestID          string
 	OrderID            uint
 	Amount             money.Amount
 	Remark             string
@@ -259,6 +260,10 @@ func (s *Service) AdminManualRefund(input AdminManualRefundInput) (*orderdomain.
 		return nil, nil, walletcontract.ErrInvalidAmount
 	}
 	recordRemark := strings.TrimSpace(input.Remark)
+	requestID := strings.TrimSpace(input.RequestID)
+	if len(requestID) > 64 {
+		return nil, nil, ErrOrderStatusInvalid
+	}
 	var createdRecord *orderdomain.OrderRefundRecord
 	if s == nil || s.orderStore == nil {
 		return nil, nil, ErrOrderFetchFailed
@@ -299,6 +304,24 @@ func (s *Service) AdminManualRefund(input AdminManualRefundInput) (*orderdomain.
 		order := *locked
 		if order.PaidAt == nil {
 			return ErrOrderStatusInvalid
+		}
+		if requestID != "" {
+			records, err := orders.ListRefundRecordsByOrderIDs([]uint{order.ID})
+			if err != nil {
+				return err
+			}
+			for i := range records {
+				existing := records[i]
+				if existing.RequestID == nil || *existing.RequestID != requestID {
+					continue
+				}
+				if existing.Type != constants.OrderRefundTypeManual || !existing.Amount.Decimal.Equal(amount) || existing.Remark != recordRemark || existing.PaymentFeeRefunded != input.PaymentFeeRefunded {
+					return ErrOrderStatusInvalid
+				}
+				existing.IdempotentReplay = true
+				createdRecord = &existing
+				return nil
+			}
 		}
 		if settingsapp.IsOrderRefundWindowExpired(order.CreatedAt, order.PaidAt, cfg.MaxRefundDays, time.Now()) {
 			return ErrOrderRefundExpired
@@ -363,6 +386,7 @@ func (s *Service) AdminManualRefund(input AdminManualRefundInput) (*orderdomain.
 			input.PaymentFeeRefunded,
 			feeRefundedAmount,
 			now,
+			requestID,
 		)
 		if err != nil {
 			return err
@@ -482,6 +506,7 @@ func (s *Service) createRefundRecordTx(
 	paymentFeeRefunded bool,
 	paymentFeeRefundedAmount money.Amount,
 	now time.Time,
+	requestID string,
 ) (*orderdomain.OrderRefundRecord, error) {
 	if orders == nil || order == nil {
 		return nil, ErrRefundRecordCreateFailed
@@ -502,6 +527,9 @@ func (s *Service) createRefundRecordTx(
 		Remark:                   remark,
 		CreatedAt:                now,
 		UpdatedAt:                now,
+	}
+	if requestID != "" {
+		record.RequestID = &requestID
 	}
 	if err := orders.CreateRefundRecord(record); err != nil {
 		return nil, ErrRefundRecordCreateFailed

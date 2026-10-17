@@ -24,6 +24,7 @@ import {
 import { formatDate, formatMoney, getLocalizedText, hasPositiveAmount } from '@/utils/format'
 import { resolveSkuCodeFromSnapshot, resolveSkuSpecFromSnapshot } from '@/utils/sku'
 import { adminUrl } from '@/utils/adminBase'
+import { getRefundIntent } from '@/utils/refundIntent'
 
 const props = defineProps<{
   modelValue: boolean
@@ -603,7 +604,7 @@ const submitRefundToWallet = async () => {
 }
 
 const submitManualRefund = async () => {
-  if (!selectedOrder.value) return
+  if (!selectedOrder.value || manualRefundSubmitting.value) return
   manualRefundError.value = ''
   manualRefundSuccess.value = ''
   if (!canManualRefund(selectedOrder.value)) {
@@ -623,11 +624,15 @@ const submitManualRefund = async () => {
 
   manualRefundSubmitting.value = true
   try {
-    await adminAPI.manualRefundOrder(Number(selectedOrder.value.id), {
-      amount,
+    const orderId = Number(selectedOrder.value.id)
+    const payload = {
+      amount: value.toFixed(2),
       remark: manualRefundForm.reason.trim() || undefined,
       payment_fee_refunded: manualRefundForm.paymentFeeRefunded,
-    })
+    }
+    const intent = await getRefundIntent(orderId, payload)
+    await adminAPI.manualRefundOrder(orderId, { ...payload, request_id: intent.requestId })
+    intent.complete()
     manualRefundSuccess.value = t('admin.orders.manualRefundSuccess')
     manualRefundForm.amount = ''
     manualRefundForm.reason = ''

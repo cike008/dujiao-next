@@ -58,6 +58,7 @@ type AdminRefundToWalletInput struct {
 
 // AdminManualRefundInput 管理端手动退款输入。
 type AdminManualRefundInput struct {
+	RequestID          string
 	OrderID            uint
 	Amount             money.Amount
 	Remark             string
@@ -133,6 +134,7 @@ type AdminRefundOrderToWalletRequest struct {
 
 // AdminManualRefundOrderRequest 管理端手动退款请求（不处理钱包/支付渠道）
 type AdminManualRefundOrderRequest struct {
+	RequestID          string `json:"request_id" binding:"required,uuid4"`
 	Amount             string `json:"amount" binding:"required"`
 	Remark             string `json:"remark"`
 	PaymentFeeRefunded bool   `json:"payment_fee_refunded"`
@@ -264,6 +266,7 @@ func (h *AdminRefundHandler) AdminManualRefundOrder(c *gin.Context) {
 		return
 	}
 	order, refundRecord, err := h.writes.AdminManualRefund(AdminManualRefundInput{
+		RequestID:          req.RequestID,
 		OrderID:            orderID,
 		Amount:             amount,
 		Remark:             req.Remark,
@@ -284,7 +287,9 @@ func (h *AdminRefundHandler) AdminManualRefundOrder(c *gin.Context) {
 		}
 		return
 	}
-	h.enqueueOrderRefundStatusEmail(order, refundRecord)
+	if refundRecord == nil || !refundRecord.IdempotentReplay {
+		h.enqueueOrderRefundStatusEmail(order, refundRecord)
+	}
 
 	response.Success(c, gin.H{
 		"order":         order,

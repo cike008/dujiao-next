@@ -40,6 +40,69 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestManualRefundRequestIdentity(t *testing.T) {
+	for _, amount := range []int64{40, 100} {
+		t.Run(fmt.Sprintf("amount=%d", amount), func(t *testing.T) {
+			svc, db := setupOrderRefundServiceTest(t)
+			now := time.Now()
+			user := userdomain.User{Email: fmt.Sprintf("refund-id-%d@example.test", now.UnixNano()), PasswordHash: "fixture"}
+			if err := db.Create(&user).Error; err != nil {
+				t.Fatal(err)
+			}
+			order := orderdomain.Order{OrderNo: fmt.Sprintf("REFUND-ID-%d", now.UnixNano()), UserID: user.ID, Status: constants.OrderStatusCompleted, Currency: "CNY", TotalAmount: money.FromDecimal(decimal.NewFromInt(100)), PaidAt: &now, CreatedAt: now, UpdatedAt: now}
+			if err := db.Create(&order).Error; err != nil {
+				t.Fatal(err)
+			}
+			input := AdminManualRefundInput{OrderID: order.ID, RequestID: "11111111-1111-4111-8111-111111111111", Amount: money.FromDecimal(decimal.NewFromInt(amount)), Remark: "external refund"}
+			sqlDB, err := db.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			sqlDB.SetMaxOpenConns(1)
+			type result struct {
+				record *orderdomain.OrderRefundRecord
+				err    error
+			}
+			start := make(chan struct{})
+			results := make(chan result, 2)
+			for i := 0; i < 2; i++ {
+				go func() { <-start; _, record, err := svc.AdminManualRefund(input); results <- result{record, err} }()
+			}
+			close(start)
+			a, b := <-results, <-results
+			if a.err != nil || b.err != nil {
+				t.Fatalf("concurrent registration failed: %v %v", a.err, b.err)
+			}
+			first := a.record
+			if first.ID != b.record.ID || first.IdempotentReplay == b.record.IdempotentReplay {
+				t.Fatal("concurrent requests did not share one refund")
+			}
+			updated, replay, err := svc.AdminManualRefund(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.ID != replay.ID || !replay.IdempotentReplay || updated.RefundedAmount.String() != input.Amount.String() {
+				t.Fatalf("duplicate refund applied: order=%+v first=%+v replay=%+v", updated, first, replay)
+			}
+			input.Amount = money.FromDecimal(decimal.NewFromInt(1))
+			if _, _, err := svc.AdminManualRefund(input); !errors.Is(err, ErrOrderStatusInvalid) {
+				t.Fatalf("same identity accepted changed amount: %v", err)
+			}
+			var count int64
+			if err := db.Model(&orderdomain.OrderRefundRecord{}).Where("order_id = ?", order.ID).Count(&count).Error; err != nil || count != 1 {
+				t.Fatalf("records=%d err=%v", count, err)
+			}
+			if amount == 40 {
+				input.RequestID = "22222222-2222-4222-8222-222222222222"
+				updated, _, err := svc.AdminManualRefund(input)
+				if err != nil || updated.RefundedAmount.String() != "41.00" {
+					t.Fatalf("new refund rejected: %+v %v", updated, err)
+				}
+			}
+		})
+	}
+}
+
 func setupOrderRefundServiceTest(t *testing.T) (*Service, *gorm.DB) {
 	t.Helper()
 	dsn := fmt.Sprintf("file:order_service_refund_test_%d?mode=memory&cache=shared", time.Now().UnixNano())

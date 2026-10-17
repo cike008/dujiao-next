@@ -243,6 +243,7 @@ func (a orderAdminRefundAdapter) ParseRefundAmount(raw string) (money.Amount, er
 
 func (a orderAdminRefundAdapter) AdminManualRefund(input ordertransport.AdminManualRefundInput) (*orderdomain.Order, *orderdomain.OrderRefundRecord, error) {
 	order, record, err := a.refunds.AdminManualRefund(orderrefund.AdminManualRefundInput{
+		RequestID:          input.RequestID,
 		OrderID:            input.OrderID,
 		Amount:             input.Amount,
 		Remark:             input.Remark,

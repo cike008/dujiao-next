@@ -206,6 +206,7 @@ export interface AdminRefundToWalletPayload {
 }
 
 export interface AdminManualRefundPayload {
+  request_id: string
   amount: string
   remark?: string
   payment_fee_refunded?: boolean

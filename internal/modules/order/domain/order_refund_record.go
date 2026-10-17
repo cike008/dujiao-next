@@ -12,7 +12,9 @@ type OrderRefundRecord struct {
 	ID                       uint         `gorm:"primarykey" json:"id"`
 	UserID                   uint         `gorm:"index;not null;default:0" json:"user_id"`
 	GuestEmail               string       `gorm:"index;type:varchar(255)" json:"guest_email,omitempty"`
-	OrderID                  uint         `gorm:"index;not null" json:"order_id"`
+	OrderID                  uint         `gorm:"index;not null;uniqueIndex:idx_order_refund_request,priority:1" json:"order_id"`
+	RequestID                *string      `gorm:"type:varchar(64);uniqueIndex:idx_order_refund_request,priority:2" json:"-"`
+	IdempotentReplay         bool         `gorm:"-" json:"-"`
 	Type                     string       `gorm:"index;type:varchar(32);not null" json:"type"`
 	Amount                   money.Amount `gorm:"type:decimal(20,2);not null;default:0" json:"amount"`
 	PaymentFeeRefunded       bool         `gorm:"not null;default:false" json:"payment_fee_refunded"`

@@ -22,3 +22,11 @@ func TestToEmailTextPreservesPlainTextLines(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
+
+func TestToEmailTextPreservesPreformattedInstructions(t *testing.T) {
+	input := "<p>Configuration:</p><pre><code>KEY=demo\nREGION=us\n  indented: true\n\tcommand --flag</code></pre><p>Next step</p>"
+	want := "Configuration:\n\nKEY=demo\nREGION=us\n  indented: true\n\tcommand --flag\nNext step"
+	if got := ToEmailText(input); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
