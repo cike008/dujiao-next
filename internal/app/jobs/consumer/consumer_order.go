@@ -363,7 +363,7 @@ func buildOrderInstructionsEmailText(order *orderdomain.Order, locale string) st
 		if text == "" {
 			return
 		}
-		plain := htmltext.StripToPlainText(text)
+		plain := htmltext.ToEmailText(text)
 		if plain == "" {
 			return
 		}
