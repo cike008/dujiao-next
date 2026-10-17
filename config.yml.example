@@ -183,13 +183,11 @@ reseller:
   # 只有反向代理可信并正确传递 Host 时才开启。
   # false 时使用原始 Host；true 时优先使用 X-Forwarded-Host。
   trusted_forwarded_host: false
-  # 管理员为分销商分配系统二级域名时使用的基础域名，例如 hello.{subdomain_base}。
-  # 生产启用前请配置为已经做好 wildcard DNS/TLS 的域名，例如 moshshop.com（分销站为 代理名.moshshop.com）。
+  # 平台系统二级域名的基础域名。留空（默认）= 不启用平台子域名，分销商只能使用自己的自定义域名；
+  # 管理端的“分配系统域名”入口会隐藏，用户侧提交系统域名也会被拒绝。
   subdomain_base: ""
-  # 系统子域强制后缀：设为 ai 时只允许 xxxxai.{subdomain_base}（xxxx 为分销自定义，至少 1 个字符）；留空不限制。
+  # 以下两项仅在 subdomain_base 非空时才有意义；仅用自定义域名时保持默认即可。
   subdomain_suffix: ""
-  # 额外禁止分配的子域标签（内置已保留 www、api、admin、mail、share、shop 等常见名称）。
-  # 例如已有独立服务的子域名（如 admin.moshshop.com 对应的 admin 已内置保留），请在此列出。
   reserved_subdomains: []
   # 是否允许普通用户在个人中心自助提交分销商申请。
   self_apply_enabled: true
