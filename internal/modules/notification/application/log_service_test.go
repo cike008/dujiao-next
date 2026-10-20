@@ -257,11 +257,14 @@ func derivedVariables(eventType, locale string, data map[string]interface{}) map
 }
 
 func TestTemplateVariablesIncludeAlertIconAndReadableChannelName(t *testing.T) {
-	icons := map[string]string{"error": "❌", "ERROR": "❌", "critical": "❌", "warning": "⚠️", "warn": "⚠️", "info": "ℹ️", "weird": ""}
+	icons := map[string][2]string{
+		"error": {"❌", "🟥🟥🟥"}, "ERROR": {"❌", "🟥🟥🟥"}, "critical": {"❌", "🟥🟥🟥"},
+		"warning": {"⚠️", "🟧🟧🟧"}, "warn": {"⚠️", "🟧🟧🟧"}, "info": {"ℹ️", "🟦🟦🟦"}, "weird": {"", ""},
+	}
 	for level, want := range icons {
 		vars := derivedVariables("exception_alert", "zh-CN", map[string]interface{}{"alert_level": level})
-		if vars["alert_level_icon"] != want {
-			t.Errorf("alert_level=%q: icon %q, want %q", level, vars["alert_level_icon"], want)
+		if vars["alert_level_icon"] != want[0] || vars["alert_level_bar"] != want[1] {
+			t.Errorf("alert_level=%q: icon %q bar %q, want %q", level, vars["alert_level_icon"], vars["alert_level_bar"], want)
 		}
 	}
 	channels := []struct{ provider, channel, want string }{
