@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"html"
+	"regexp"
 	"strings"
 
 	"github.com/dujiao-next/internal/config"
@@ -32,11 +34,30 @@ func (s *Service) SendMessage(ctx context.Context, chatID, message string) error
 	if token == "" {
 		return notifycontract.ErrNotifyConfigInvalid
 	}
-	return s.sender.SendWithBotToken(ctx, token, notifycontract.SendOptions{
+	// 通知是纯文本：先整体转义，再把邮箱包成等宽格式。Telegram 会把裸邮箱识别成「写邮件」链接，
+	// 并且会把紧挨着的中文标签一起划进链接；等宽格式既不会被当成链接，点一下还能直接复制。
+	err = s.sender.SendWithBotToken(ctx, token, notifycontract.SendOptions{
 		ChatID:                chatID,
-		Message:               message,
+		Message:               formatNotificationHTML(message),
+		ParseMode:             "HTML",
 		DisableWebPagePreview: true,
 	})
+	if err != nil && strings.Contains(err.Error(), "parse entities") {
+		// 格式被 Telegram 拒绝（理论上不会发生，因为内容已转义）：退回纯文本，保证通知一定能送达。
+		return s.sender.SendWithBotToken(ctx, token, notifycontract.SendOptions{
+			ChatID:                chatID,
+			Message:               message,
+			DisableWebPagePreview: true,
+		})
+	}
+	return err
+}
+
+var notificationEmailPattern = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
+
+// formatNotificationHTML 把纯文本通知转成 Telegram HTML：全部转义，仅邮箱包成 <code>。
+func formatNotificationHTML(message string) string {
+	return notificationEmailPattern.ReplaceAllString(html.EscapeString(message), "<code>$0</code>")
 }
 
 // SendWithBotToken 使用显式 Bot Token 发送消息。

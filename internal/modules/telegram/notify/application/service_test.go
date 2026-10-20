@@ -98,3 +98,55 @@ func TestServiceSendMessagePropagatesSettingReadFailure(t *testing.T) {
 		t.Fatalf("sender must not be called after a setting error, got %d calls", sender.calls)
 	}
 }
+
+func TestFormatNotificationHTMLEscapesEverythingAndWrapsOnlyEmails(t *testing.T) {
+	cases := map[string]string{
+		"购买人：zhangsan@example.com":      "购买人：<code>zhangsan@example.com</code>",
+		"张三 <zhangsan@example.com>":     "张三 &lt;<code>zhangsan@example.com</code>&gt;",
+		"a@b.co 和 c.d+e@f-g.org":        "<code>a@b.co</code> 和 <code>c.d+e@f-g.org</code>",
+		"1 < 2 && <b>x</b> \"q\"":       "1 &lt; 2 &amp;&amp; &lt;b&gt;x&lt;/b&gt; &#34;q&#34;",
+		"订单号：DJ2026 金额：220.00 CNY（无邮箱）": "订单号：DJ2026 金额：220.00 CNY（无邮箱）",
+	}
+	for in, want := range cases {
+		if got := formatNotificationHTML(in); got != want {
+			t.Errorf("formatNotificationHTML(%q)\n got  %q\n want %q", in, got, want)
+		}
+	}
+}
+
+func TestServiceSendMessageUsesHTMLAndFallsBackToPlainTextWhenRejected(t *testing.T) {
+	settings := &settingReaderStub{setting: settingssecurity.TelegramAuthSetting{BotToken: "tok"}}
+	sender := &senderStub{}
+	svc := NewService(settings, config.TelegramAuthConfig{}, sender)
+	if err := svc.SendMessage(context.Background(), "1", "邮箱：a@b.co"); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if sender.options.ParseMode != "HTML" || sender.options.Message != "邮箱：<code>a@b.co</code>" || sender.calls != 1 {
+		t.Fatalf("unexpected first send: %+v calls=%d", sender.options, sender.calls)
+	}
+
+	rejecting := &rejectingSender{}
+	svc = NewService(settings, config.TelegramAuthConfig{}, rejecting)
+	if err := svc.SendMessage(context.Background(), "1", "邮箱：a@b.co"); err != nil {
+		t.Fatalf("fallback send failed: %v", err)
+	}
+	if len(rejecting.sent) != 2 || rejecting.sent[1].ParseMode != "" || rejecting.sent[1].Message != "邮箱：a@b.co" {
+		t.Fatalf("expected a plain-text retry after a parse error, got %+v", rejecting.sent)
+	}
+
+	other := &senderStub{err: errors.New("network down")}
+	svc = NewService(settings, config.TelegramAuthConfig{}, other)
+	if err := svc.SendMessage(context.Background(), "1", "x"); err == nil || other.calls != 1 {
+		t.Fatalf("other errors must not trigger a retry (calls=%d err=%v)", other.calls, err)
+	}
+}
+
+type rejectingSender struct{ sent []notifycontract.SendOptions }
+
+func (r *rejectingSender) SendWithBotToken(_ context.Context, _ string, options notifycontract.SendOptions) error {
+	r.sent = append(r.sent, options)
+	if options.ParseMode == "HTML" {
+		return errors.New("telegram status=400 body=Bad Request: can't parse entities")
+	}
+	return nil
+}
