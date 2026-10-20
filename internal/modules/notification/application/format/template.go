@@ -22,7 +22,63 @@ func BuildTemplateVariables(payload queue.NotificationDispatchPayload) map[strin
 	data["biz_type"] = strings.TrimSpace(payload.BizType)
 	data["biz_id"] = fmt.Sprintf("%d", payload.BizID)
 	data["occurred_at"] = time.Now().Format("2006-01-02 15:04:05")
+	if level, ok := data["alert_level"]; ok {
+		data["alert_level_icon"] = alertLevelIcon(fmt.Sprint(level))
+	}
+	data["payment_channel_name"] = paymentChannelDisplayName(
+		strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["provider_type"]))),
+		strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["channel_type"]))),
+	)
 	return data
+}
+
+func valueOrEmpty(value interface{}) interface{} {
+	if value == nil {
+		return ""
+	}
+	return value
+}
+
+// alertLevelIcon 把告警级别转成图标，供通知模板用 {{alert_level_icon}} 引用。
+func alertLevelIcon(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "critical", "fatal", "error":
+		return "❌"
+	case "warning", "warn":
+		return "⚠️"
+	case "info":
+		return "ℹ️"
+	default:
+		return ""
+	}
+}
+
+var paymentChannelNames = map[string]string{
+	"stripe": "Stripe", "paypal": "PayPal", "alipay": "支付宝", "wechat": "微信支付", "wxpay": "微信支付",
+	"qqpay": "QQ 钱包", "usdt": "USDT", "trx": "TRX", "balance": "余额",
+}
+
+var paymentProviderNames = map[string]string{
+	"epay": "易支付", "epusdt": "EPUSDT", "bepusdt": "BEPUSDT", "dujiaopay": "DujiaoPay",
+	"okpay": "OKPay", "tokenpay": "TokenPay",
+}
+
+// paymentChannelDisplayName 生成适合直接阅读的支付渠道名，供模板用 {{payment_channel_name}} 引用。
+// official/wallet 只是“接入方式”，不展示；第三方聚合渠道展示为「接入方 · 渠道」。
+func paymentChannelDisplayName(providerType, channelType string) string {
+	provider := strings.ToLower(providerType)
+	channel := strings.ToLower(channelType)
+	channelName := channelType
+	if name, ok := paymentChannelNames[channel]; ok {
+		channelName = name
+	}
+	if providerName, ok := paymentProviderNames[provider]; ok {
+		if channelName == "" || strings.EqualFold(channelName, providerName) {
+			return providerName
+		}
+		return providerName + " · " + channelName
+	}
+	return channelName
 }
 
 func RenderTemplate(tmpl string, variables map[string]interface{}) string {

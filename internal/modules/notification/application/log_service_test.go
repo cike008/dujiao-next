@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dujiao-next/internal/constants"
+	"github.com/dujiao-next/internal/modules/notification/application/format"
 	"github.com/dujiao-next/internal/modules/notification/contract"
 	"github.com/dujiao-next/internal/modules/notification/domain"
 	settingsmessaging "github.com/dujiao-next/internal/modules/settings/schema/messaging"
@@ -246,5 +247,40 @@ func TestServiceDispatchSingleEventSendsFeishuAndRecordsEachRecipient(t *testing
 	}
 	if statuses["oc_success"] != notificationLogStatusSuccess || statuses["oc_failure"] != notificationLogStatusFailed {
 		t.Fatalf("unexpected feishu log statuses: %#v", statuses)
+	}
+}
+
+func TestTemplateVariablesIncludeAlertIconAndReadableChannelName(t *testing.T) {
+	icons := map[string]string{"error": "❌", "ERROR": "❌", "critical": "❌", "warning": "⚠️", "warn": "⚠️", "info": "ℹ️", "weird": ""}
+	for level, want := range icons {
+		vars := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: "exception_alert", Data: map[string]interface{}{"alert_level": level}})
+		if vars["alert_level_icon"] != want {
+			t.Errorf("alert_level=%q: icon %q, want %q", level, vars["alert_level_icon"], want)
+		}
+	}
+	channels := []struct{ provider, channel, want string }{
+		{"official", "stripe", "Stripe"}, {"official", "paypal", "PayPal"}, {"official", "alipay", "支付宝"},
+		{"official", "wechat", "微信支付"}, {"epay", "alipay", "易支付 · 支付宝"},
+		{"bepusdt", "usdt.arbitrum", "BEPUSDT · usdt.arbitrum"}, {"bepusdt", "bepusdt", "BEPUSDT"},
+		{"dujiaopay", "tron-usdt", "DujiaoPay · tron-usdt"}, {"wallet", "balance", "余额"}, {"official", "", ""},
+	}
+	for _, c := range channels {
+		vars := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: "order_paid_success",
+			Data: map[string]interface{}{"provider_type": c.provider, "channel_type": c.channel}})
+		if vars["payment_channel_name"] != c.want {
+			t.Errorf("%s/%s: name %q, want %q", c.provider, c.channel, vars["payment_channel_name"], c.want)
+		}
+	}
+	plain := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: "order_paid_success", Data: map[string]interface{}{"order_no": "A1"}})
+	if _, ok := plain["alert_level_icon"]; ok {
+		t.Error("alert_level_icon must only be added when the payload carries alert_level")
+	}
+	rendered := format.RenderTemplate("✅ {{payment_channel_name}} · {{customer_email}}",
+		map[string]interface{}{"payment_channel_name": "Stripe", "customer_email": "a@b.com"})
+	if rendered != "✅ Stripe · a@b.com" {
+		t.Errorf("render mismatch: %q", rendered)
+	}
+	if missing := format.RenderTemplate("[{{alert_level_icon}}]", map[string]interface{}{}); missing != "[]" {
+		t.Errorf("a missing variable must render empty, got %q", missing)
 	}
 }
