@@ -38,6 +38,8 @@ func BuildTestVariables(scene, locale string) map[string]interface{} {
 			"amount":          "100.00",
 			"currency":        "USD",
 			"payment_channel": "epay/alipay",
+			"provider_type":   "epay",
+			"channel_type":    "alipay",
 		}
 	case constants.NotificationEventOrderPaidSuccess:
 		return map[string]interface{}{
@@ -47,6 +49,8 @@ func BuildTestVariables(scene, locale string) map[string]interface{} {
 			"amount":                    "299.00",
 			"currency":                  "USD",
 			"payment_channel":           "epay/alipay",
+			"provider_type":             "epay",
+			"channel_type":              "alipay",
 			"items_summary":             buildNotificationTestOrderItems(locale),
 			"fulfillment_items_summary": buildNotificationTestFulfillmentItems(locale),
 			"delivery_summary":          BuildDeliverySummary(locale, OrderItemCounts{Total: 2, Auto: 1, Manual: 1}),
@@ -65,6 +69,7 @@ func BuildTestVariables(scene, locale string) map[string]interface{} {
 			"alert_type":             alertTypeLabelByType(locale, constants.NotificationAlertTypeLowStockProducts),
 			"alert_type_label":       alertTypeLabelByType(locale, constants.NotificationAlertTypeLowStockProducts),
 			"alert_level":            "warning",
+			"client_ip":              "203.0.113.10",
 			"alert_value":            "2",
 			"alert_threshold":        "5",
 			"affected_items_count":   "2",

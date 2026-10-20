@@ -250,10 +250,16 @@ func TestServiceDispatchSingleEventSendsFeishuAndRecordsEachRecipient(t *testing
 	}
 }
 
+func derivedVariables(eventType, locale string, data map[string]interface{}) map[string]interface{} {
+	vars := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: eventType, Data: data})
+	format.AddDerivedVariables(vars, locale)
+	return vars
+}
+
 func TestTemplateVariablesIncludeAlertIconAndReadableChannelName(t *testing.T) {
 	icons := map[string]string{"error": "❌", "ERROR": "❌", "critical": "❌", "warning": "⚠️", "warn": "⚠️", "info": "ℹ️", "weird": ""}
 	for level, want := range icons {
-		vars := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: "exception_alert", Data: map[string]interface{}{"alert_level": level}})
+		vars := derivedVariables("exception_alert", "zh-CN", map[string]interface{}{"alert_level": level})
 		if vars["alert_level_icon"] != want {
 			t.Errorf("alert_level=%q: icon %q, want %q", level, vars["alert_level_icon"], want)
 		}
@@ -265,13 +271,12 @@ func TestTemplateVariablesIncludeAlertIconAndReadableChannelName(t *testing.T) {
 		{"dujiaopay", "tron-usdt", "DujiaoPay · tron-usdt"}, {"wallet", "balance", "余额"}, {"official", "", ""},
 	}
 	for _, c := range channels {
-		vars := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: "order_paid_success",
-			Data: map[string]interface{}{"provider_type": c.provider, "channel_type": c.channel}})
+		vars := derivedVariables("order_paid_success", "zh-CN", map[string]interface{}{"provider_type": c.provider, "channel_type": c.channel})
 		if vars["payment_channel_name"] != c.want {
 			t.Errorf("%s/%s: name %q, want %q", c.provider, c.channel, vars["payment_channel_name"], c.want)
 		}
 	}
-	plain := format.BuildTemplateVariables(queue.NotificationDispatchPayload{EventType: "order_paid_success", Data: map[string]interface{}{"order_no": "A1"}})
+	plain := derivedVariables("order_paid_success", "zh-CN", map[string]interface{}{"order_no": "A1"})
 	if _, ok := plain["alert_level_icon"]; ok {
 		t.Error("alert_level_icon must only be added when the payload carries alert_level")
 	}
@@ -282,5 +287,27 @@ func TestTemplateVariablesIncludeAlertIconAndReadableChannelName(t *testing.T) {
 	}
 	if missing := format.RenderTemplate("[{{alert_level_icon}}]", map[string]interface{}{}); missing != "[]" {
 		t.Errorf("a missing variable must render empty, got %q", missing)
+	}
+}
+
+func TestOptionalLinesDisappearCleanlyWhenTheyHaveNoValue(t *testing.T) {
+	const tmpl = "{{alert_level_icon}} 级别：{{alert_level}}\n🕒 时间：{{occurred_at}}{{client_ip_suffix}}\n{{alert_metrics}}\n{{affected_items_summary}}"
+	render := func(data map[string]interface{}) string {
+		vars := derivedVariables("exception_alert", "zh-CN", data)
+		vars["occurred_at"] = "12:00:00"
+		return format.ComposePlainTextMessage("🚨 告警", format.RenderTemplate(tmpl, vars))
+	}
+	// 支付回调类告警：有来源 IP，没有数值与受影响商品 → 末尾的空行被裁掉，IP 接在时间后面。
+	callback := render(map[string]interface{}{"alert_level": "error", "client_ip": "1.2.3.4"})
+	if callback != "🚨 告警\n\n❌ 级别：error\n🕒 时间：12:00:00｜🌐 1.2.3.4" {
+		t.Errorf("callback alert rendered unexpectedly: %q", callback)
+	}
+	// 库存类告警：没有来源 IP，有数值与商品。
+	stock := render(map[string]interface{}{"alert_level": "warning", "alert_value": "2", "alert_threshold": "5", "affected_items_summary": "1. A"})
+	if stock != "🚨 告警\n\n⚠️ 级别：warning\n🕒 时间：12:00:00\n📊 当前值：2　阈值：5\n1. A" {
+		t.Errorf("stock alert rendered unexpectedly: %q", stock)
+	}
+	if en := derivedVariables("exception_alert", "en-US", map[string]interface{}{"alert_value": "2", "alert_threshold": "5"})["alert_metrics"]; en != "📊 Current: 2　Threshold: 5" {
+		t.Errorf("english metrics line: %q", en)
 	}
 }

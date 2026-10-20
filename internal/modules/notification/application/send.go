@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dujiao-next/internal/constants"
 	"github.com/dujiao-next/internal/logger"
@@ -46,6 +47,10 @@ func (s *Service) SendTest(ctx context.Context, input contract.TestSendInput) er
 	locale := format.ResolveLocale(input.Locale, setting.DefaultLocale)
 	format.ApplyTestVariables(variables, format.BuildTestVariables(scene, locale))
 	variables["event_type"] = scene
+	if _, ok := variables["occurred_at"]; !ok {
+		variables["occurred_at"] = time.Now().Format("2006-01-02 15:04:05")
+	}
+	format.AddDerivedVariables(variables, locale)
 	variables["message"] = format.PickMessage(variables["message"], "test message")
 	title := format.RenderTemplate(template.Title, variables)
 	body := format.RenderTemplate(template.Body, variables)
@@ -139,6 +144,7 @@ func (s *Service) dispatchSingleEvent(ctx context.Context, setting settingsmessa
 	locale := format.ResolveLocale(payload.Locale, setting.DefaultLocale)
 	template := setting.Templates.TemplateByEvent(payload.EventType).ResolveLocaleTemplate(locale)
 	variables := format.BuildTemplateVariables(payload)
+	format.AddDerivedVariables(variables, locale)
 	title := format.RenderTemplate(template.Title, variables)
 	body := format.RenderTemplate(template.Body, variables)
 	if strings.TrimSpace(body) == "" {

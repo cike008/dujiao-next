@@ -22,6 +22,20 @@ func BuildTemplateVariables(payload queue.NotificationDispatchPayload) map[strin
 	data["biz_type"] = strings.TrimSpace(payload.BizType)
 	data["biz_id"] = fmt.Sprintf("%d", payload.BizID)
 	data["occurred_at"] = time.Now().Format("2006-01-02 15:04:05")
+	return data
+}
+
+// AddDerivedVariables 补充供模板直接使用的派生变量（真实通知与测试通知共用）：
+//   - alert_level_icon：按告警级别给出 ❌ / ⚠️ / ℹ️
+//   - payment_channel_name：可读的支付渠道名（Stripe、PayPal、易支付 · 支付宝 …）
+//   - client_ip_suffix：有来源 IP 时为「｜🌐 IP」，否则为空，可直接接在时间等行末尾
+//   - alert_metrics：有当前值时为一整行「📊 当前值…阈值…」，否则为空，适合放在模板靠后的位置
+//
+// 值首尾不含空白（渲染时会被裁剪），所以用「｜」而不是空格作分隔。
+func AddDerivedVariables(data map[string]interface{}, locale string) {
+	if data == nil {
+		return
+	}
 	if level, ok := data["alert_level"]; ok {
 		data["alert_level_icon"] = alertLevelIcon(fmt.Sprint(level))
 	}
@@ -29,7 +43,21 @@ func BuildTemplateVariables(payload queue.NotificationDispatchPayload) map[strin
 		strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["provider_type"]))),
 		strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["channel_type"]))),
 	)
-	return data
+	if ip := strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["client_ip"]))); ip != "" {
+		data["client_ip_suffix"] = "｜🌐 " + ip
+	} else {
+		data["client_ip_suffix"] = ""
+	}
+	value := strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["alert_value"])))
+	threshold := strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["alert_threshold"])))
+	if value == "" {
+		data["alert_metrics"] = ""
+		return
+	}
+	data["alert_metrics"] = localizedNotificationText(locale,
+		"📊 当前值："+value+"　阈值："+threshold,
+		"📊 當前值："+value+"　閾值："+threshold,
+		"📊 Current: "+value+"　Threshold: "+threshold)
 }
 
 func valueOrEmpty(value interface{}) interface{} {
