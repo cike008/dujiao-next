@@ -27,7 +27,7 @@ func BuildTemplateVariables(payload queue.NotificationDispatchPayload) map[strin
 
 // AddDerivedVariables 补充供模板直接使用的派生变量（真实通知与测试通知共用）：
 //   - alert_level_icon：按告警级别给出 ❌ / ⚠️ / ℹ️
-//   - alert_level_bar：按告警级别给出彩色方块色条（错误 🟥🟥🟥 / 警告 🟧🟧🟧 / 提示 🟦🟦🟦），适合放在标题里
+//   - alert_level_bar：按告警级别给出彩色方块色条（错误 🟥🟥🟥 / 警告 🟧🟧🟧 / 提示 🟪🟪🟪），适合放在标题里
 //   - payment_channel_name：可读的支付渠道名（Stripe、PayPal、易支付 · 支付宝 …）
 //   - client_ip_suffix：有来源 IP 时为「｜🌐 IP」，否则为空，可直接接在时间等行末尾
 //   - alert_metrics：有当前值时为一整行「📊 当前值…阈值…」，否则为空，适合放在模板靠后的位置
@@ -91,7 +91,7 @@ func alertLevelBar(level string) string {
 	case "warning", "warn":
 		return "🟧🟧🟧"
 	case "info":
-		return "🟦🟦🟦"
+		return "🟪🟪🟪" // 蓝色已用于「充值成功」，提示改用紫色避免撞色
 	default:
 		return ""
 	}
