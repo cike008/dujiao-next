@@ -111,7 +111,8 @@ func newCallbackTestEngine(routes *settingsintegration.CallbackRoutesSetting, li
 		callbackDispatchers{payment: handler, stripe: handler},
 		limit,
 	))
-	engine.NoRoute(func(c *gin.Context) { *next++; c.String(http.StatusOK, "fell-through") })
+	// 与生产一致：没有匹配路由时 Gin 返回 404；若回调处理后又掉进这里，响应会被写成 404。
+	engine.NoRoute(func(c *gin.Context) { *next++; c.String(http.StatusNotFound, "404 page not found") })
 	return engine
 }
 
@@ -164,7 +165,7 @@ func TestCustomCallbackRespectsMethodAndTrailingSlash(t *testing.T) {
 	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/custom/stripe/"); rec.Code != http.StatusOK || handled != 1 {
 		t.Fatalf("POST with trailing slash should dispatch, code=%d handled=%d", rec.Code, handled)
 	}
-	if rec := callbackRequest(engine, http.MethodGet, "/api/v1/custom/stripe"); rec.Code != http.StatusOK || handled != 1 || fell != 1 {
+	if rec := callbackRequest(engine, http.MethodGet, "/api/v1/custom/stripe"); rec.Code != http.StatusNotFound || handled != 1 || fell != 1 {
 		t.Fatalf("GET to a POST-only webhook must fall through, code=%d handled=%d fell=%d", rec.Code, handled, fell)
 	}
 }
@@ -184,15 +185,40 @@ func TestCallbackMiddlewareIgnoresUnrelatedRequests(t *testing.T) {
 	var handled, fell int
 	engine := newCallbackTestEngine(nil, countingLimiter(0), &handled, &fell)
 
-	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/payments/callback"); rec.Code != http.StatusOK || fell != 1 {
-		t.Fatalf("without custom routes the default route must work untouched, code=%d fell=%d", rec.Code, fell)
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/payments/callback"); rec.Code != http.StatusNotFound || fell != 1 {
+		t.Fatalf("without custom routes the request must pass through untouched, code=%d fell=%d", rec.Code, fell)
 	}
 	routes := &settingsintegration.CallbackRoutesSetting{PaymentCallback: "/api/v1/custom/pay"}
 	engine = newCallbackTestEngine(routes, countingLimiter(0), &handled, &fell)
-	if rec := callbackRequest(engine, http.MethodPost, "/not-api/custom/pay"); rec.Code != http.StatusOK {
+	if rec := callbackRequest(engine, http.MethodPost, "/not-api/custom/pay"); rec.Code != http.StatusNotFound {
 		t.Fatalf("non-API paths are not touched, got %d", rec.Code)
 	}
-	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/other"); rec.Code != http.StatusOK {
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/other"); rec.Code != http.StatusNotFound {
 		t.Fatalf("unrelated API paths are not rate limited by this middleware, got %d", rec.Code)
+	}
+}
+
+// 回归测试：自定义回调路径经过「真实」限流中间件放行后，必须返回处理函数的响应，
+// 而不能掉进引擎的 404 处理器（曾导致回调被处理、Stripe 却收到 404）。
+func TestCustomCallbackWithRealRateLimiterReturnsHandlerResponse(t *testing.T) {
+	var handled, fell int
+	routes := &settingsintegration.CallbackRoutesSetting{StripeWebhook: "/api/hooks/stripe-test"}
+	limiter := RateLimitMiddleware(nil, RateLimitRule{Prefix: "test:callback", WindowSeconds: 60, MaxRequests: 2, BlockSeconds: 60}, KeyByIP)
+	engine := newCallbackTestEngine(routes, limiter, &handled, &fell)
+
+	for i := 1; i <= 2; i++ {
+		rec := callbackRequest(engine, http.MethodPost, "/api/hooks/stripe-test")
+		if rec.Code != http.StatusOK || rec.Body.String() != "handled" {
+			t.Fatalf("request %d: want 200 'handled', got %d %q", i, rec.Code, rec.Body.String())
+		}
+	}
+	if fell != 0 {
+		t.Fatalf("a handled callback must never fall through to the 404 handler, fell=%d", fell)
+	}
+	if rec := callbackRequest(engine, http.MethodPost, "/api/hooks/stripe-test"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("third request must be rate limited, got %d", rec.Code)
+	}
+	if handled != 2 || fell != 0 {
+		t.Fatalf("rate-limited requests must not reach the handler or the 404 handler: handled=%d fell=%d", handled, fell)
 	}
 }

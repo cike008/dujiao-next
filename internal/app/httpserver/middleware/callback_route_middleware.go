@@ -65,11 +65,17 @@ func newCallbackRouteMiddleware(
 	dispatch callbackDispatchers,
 	rateLimit gin.HandlerFunc,
 ) gin.HandlerFunc {
-	// serve 先应用限流；被限流（已 Abort）时不再调用处理函数。
+	// serve 先应用限流，再调用处理函数。
+	//
+	// 限流器是标准中间件：放行时会调用 c.Next()。在这里内联调用它时，c.Next() 会把
+	// 引擎剩余的处理链（最终是 Gin 默认的 404 处理器）也跑一遍，导致回调虽然被处理，
+	// 响应却已被写成 404。所以先 Abort，使限流器内部的 c.Next() 成为空操作；
+	// 限流器若拒绝请求会自己写出响应（Written），此时直接返回。
 	serve := func(c *gin.Context, handler gin.HandlerFunc) {
 		if rateLimit != nil {
+			c.Abort()
 			rateLimit(c)
-			if c.IsAborted() {
+			if c.Writer.Written() {
 				return
 			}
 		}
