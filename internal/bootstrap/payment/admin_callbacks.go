@@ -2,6 +2,9 @@ package paymentbootstrap
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	paymentapp "github.com/dujiao-next/internal/modules/payment/application"
@@ -169,10 +172,15 @@ func (a webhookServiceAdapter) HandleDujiaoPayWebhook(input paymenttransport.Web
 
 type exceptionAlerterAdapter struct {
 	notifications notificationcontract.NotificationEnqueuer
+	throttle      *exceptionAlertThrottle
 }
 
 func (a exceptionAlerterAdapter) EnqueuePaymentExceptionAlert(method, path, clientIP string, data jsonmap.JSON) error {
 	if a.notifications == nil {
+		return nil
+	}
+	send, suppressed := a.throttle.allow(data)
+	if !send {
 		return nil
 	}
 	payload := jsonmap.JSON{
@@ -185,10 +193,92 @@ func (a exceptionAlerterAdapter) EnqueuePaymentExceptionAlert(method, path, clie
 	for key, value := range data {
 		payload[key] = value
 	}
+	if suppressed > 0 {
+		payload["suppressed_count"] = suppressed
+		payload["suppressed_window"] = exceptionAlertWindow.String()
+	}
 	return a.notifications.Enqueue(notificationcontract.EnqueueInput{
 		EventType: constants.NotificationEventExceptionAlert,
 		BizType:   constants.NotificationBizTypePaymentCallback,
 		BizID:     0,
 		Data:      payload,
 	})
+}
+
+const (
+	// exceptionAlertWindow 同一类告警在该窗口内只发送一次，其余计入 suppressed_count。
+	exceptionAlertWindow = 10 * time.Minute
+	// exceptionAlertMaxKeys 限制内存占用；超过后先清理已过期条目。
+	exceptionAlertMaxKeys = 1024
+)
+
+// exceptionAlertThrottle 聚合重复的支付异常告警，避免扫描器刷屏淹没真实告警。
+//
+// 聚合键 = 告警类型 + 渠道 + 具体的支付/订单标识。没有具体标识的告警（例如伪造回调的盲扫）
+// 会合并成一条；针对某一笔支付的真实失败各自独立，不会被别的告警吞掉。
+type exceptionAlertThrottle struct {
+	mu      sync.Mutex
+	window  time.Duration
+	entries map[string]*throttledAlert
+	now     func() time.Time
+}
+
+type throttledAlert struct {
+	sentAt     time.Time
+	suppressed int
+}
+
+func newExceptionAlertThrottle(window time.Duration) *exceptionAlertThrottle {
+	return &exceptionAlertThrottle{window: window, entries: map[string]*throttledAlert{}, now: time.Now}
+}
+
+func throttleField(data jsonmap.JSON, key string) string {
+	if value, ok := data[key]; ok && value != nil {
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+	return ""
+}
+
+func exceptionAlertKey(data jsonmap.JSON) string {
+	return strings.Join([]string{
+		throttleField(data, "alert_type"),
+		throttleField(data, "provider"),
+		throttleField(data, "payment_id"),
+		throttleField(data, "out_trade_no"),
+		throttleField(data, "order_no"),
+	}, "|")
+}
+
+// allow 返回是否应该发送这条告警；发送时返回此前被压制的数量（可写入告警内容）。
+func (t *exceptionAlertThrottle) allow(data jsonmap.JSON) (send bool, suppressed int) {
+	if t == nil || t.window <= 0 {
+		return true, 0
+	}
+	key := exceptionAlertKey(data)
+	now := t.now()
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	entry, found := t.entries[key]
+	if found && now.Sub(entry.sentAt) < t.window {
+		entry.suppressed++
+		return false, 0
+	}
+	if len(t.entries) >= exceptionAlertMaxKeys {
+		for k, e := range t.entries {
+			if now.Sub(e.sentAt) >= t.window {
+				delete(t.entries, k)
+			}
+		}
+		if len(t.entries) >= exceptionAlertMaxKeys {
+			// 全部都还在窗口内：宁可多发也不丢告警。
+			return true, 0
+		}
+	}
+	previous := 0
+	if found {
+		previous = entry.suppressed
+	}
+	t.entries[key] = &throttledAlert{sentAt: now}
+	return true, previous
 }

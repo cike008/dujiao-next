@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dujiao-next/internal/constants"
+	settingsintegration "github.com/dujiao-next/internal/modules/settings/schema/integration"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -96,5 +99,100 @@ func TestJWTAuthMiddlewareMissingSecret(t *testing.T) {
 	}
 	if resp.StatusCode != 401 {
 		t.Fatalf("status_code want 401 got %d", resp.StatusCode)
+	}
+}
+
+func newCallbackTestEngine(routes *settingsintegration.CallbackRoutesSetting, limit gin.HandlerFunc, paid *int, next *int) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	handler := func(c *gin.Context) { *paid++; c.String(http.StatusOK, "handled") }
+	engine := gin.New()
+	engine.Use(newCallbackRouteMiddleware(
+		func() *settingsintegration.CallbackRoutesSetting { return routes },
+		callbackDispatchers{payment: handler, stripe: handler},
+		limit,
+	))
+	engine.NoRoute(func(c *gin.Context) { *next++; c.String(http.StatusOK, "fell-through") })
+	return engine
+}
+
+func callbackRequest(engine *gin.Engine, method, path string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+	return rec
+}
+
+// 限流器：前 allowed 次放行，之后返回 429 并中止。
+func countingLimiter(allowed int) gin.HandlerFunc {
+	seen := 0
+	return func(c *gin.Context) {
+		seen++
+		if seen > allowed {
+			c.AbortWithStatus(http.StatusTooManyRequests)
+			return
+		}
+		c.Next()
+	}
+}
+
+func TestCustomCallbackPathsAreRateLimited(t *testing.T) {
+	var handled, fell int
+	routes := &settingsintegration.CallbackRoutesSetting{PaymentCallback: "/api/v1/custom/pay", StripeWebhook: "/api/v1/custom/stripe"}
+	engine := newCallbackTestEngine(routes, countingLimiter(2), &handled, &fell)
+
+	for i := 0; i < 2; i++ {
+		if rec := callbackRequest(engine, http.MethodPost, "/api/v1/custom/pay"); rec.Code != http.StatusOK {
+			t.Fatalf("request %d should pass the limiter, got %d", i+1, rec.Code)
+		}
+	}
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/custom/pay"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("third request must be rate limited, got %d", rec.Code)
+	}
+	if handled != 2 {
+		t.Fatalf("handler must not run for rate-limited requests, ran %d times", handled)
+	}
+	// 限流计数在所有自定义入口之间共享。
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/custom/stripe"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("other custom paths share the same limiter, got %d", rec.Code)
+	}
+}
+
+func TestCustomCallbackRespectsMethodAndTrailingSlash(t *testing.T) {
+	var handled, fell int
+	routes := &settingsintegration.CallbackRoutesSetting{StripeWebhook: "/api/v1/custom/stripe"}
+	engine := newCallbackTestEngine(routes, nil, &handled, &fell)
+
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/custom/stripe/"); rec.Code != http.StatusOK || handled != 1 {
+		t.Fatalf("POST with trailing slash should dispatch, code=%d handled=%d", rec.Code, handled)
+	}
+	if rec := callbackRequest(engine, http.MethodGet, "/api/v1/custom/stripe"); rec.Code != http.StatusOK || handled != 1 || fell != 1 {
+		t.Fatalf("GET to a POST-only webhook must fall through, code=%d handled=%d fell=%d", rec.Code, handled, fell)
+	}
+}
+
+func TestDefaultCallbackPathIsHiddenWhenCustomRouteConfigured(t *testing.T) {
+	var handled, fell int
+	routes := &settingsintegration.CallbackRoutesSetting{PaymentCallback: "/api/v1/custom/pay"}
+	engine := newCallbackTestEngine(routes, countingLimiter(100), &handled, &fell)
+
+	rec := callbackRequest(engine, http.MethodPost, constants.DefaultPaymentCallbackPath)
+	if rec.Code != http.StatusNotFound || handled != 0 || fell != 0 {
+		t.Fatalf("default path must be hidden, code=%d handled=%d fell=%d", rec.Code, handled, fell)
+	}
+}
+
+func TestCallbackMiddlewareIgnoresUnrelatedRequests(t *testing.T) {
+	var handled, fell int
+	engine := newCallbackTestEngine(nil, countingLimiter(0), &handled, &fell)
+
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/payments/callback"); rec.Code != http.StatusOK || fell != 1 {
+		t.Fatalf("without custom routes the default route must work untouched, code=%d fell=%d", rec.Code, fell)
+	}
+	routes := &settingsintegration.CallbackRoutesSetting{PaymentCallback: "/api/v1/custom/pay"}
+	engine = newCallbackTestEngine(routes, countingLimiter(0), &handled, &fell)
+	if rec := callbackRequest(engine, http.MethodPost, "/not-api/custom/pay"); rec.Code != http.StatusOK {
+		t.Fatalf("non-API paths are not touched, got %d", rec.Code)
+	}
+	if rec := callbackRequest(engine, http.MethodPost, "/api/v1/other"); rec.Code != http.StatusOK {
+		t.Fatalf("unrelated API paths are not rate limited by this middleware, got %d", rec.Code)
 	}
 }

@@ -22,7 +22,7 @@ type Handlers struct {
 func New(c *container.Container) Handlers {
 	guestOrders := guestOrderLookupAdapter{orders: c.OrderService}
 	userOrders := userOrderLookupAdapter{orders: c.OrderService}
-	alerter := exceptionAlerterAdapter{notifications: c.NotificationService}
+	alerter := exceptionAlerterAdapter{notifications: c.NotificationService, throttle: newExceptionAlertThrottle(exceptionAlertWindow)}
 
 	return Handlers{
 		Latest: paymenttransport.NewLatestHandler(

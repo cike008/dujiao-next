@@ -245,7 +245,9 @@ func SetupRouter(cfg *config.Config, c *container.Container) *gin.Engine {
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.LoggerMiddleware(log))
 	r.Use(middleware.CORSMiddleware(cfg.CORS))
-	r.Use(middleware.CallbackRouteMiddleware(c.SettingService, paymentCallbackHandler, paymentWebhookHandler, upstreamHandler))
+	// 自定义回调路径在路由层之前被分发，必须与默认回调路由使用同一个限流，否则会绕过限流。
+	r.Use(middleware.CallbackRouteMiddleware(c.SettingService, paymentCallbackHandler, paymentWebhookHandler, upstreamHandler,
+		middleware.RateLimitMiddleware(redisClient, callbackRule, middleware.KeyByIP)))
 
 	// 静态文件服务（上传的图片）必须放在前面。
 	// 所有上传文件一律禁止脚本：即使上传校验被绕过（如 telegram 场景不限扩展名、上游图片），
