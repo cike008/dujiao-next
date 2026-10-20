@@ -84,7 +84,7 @@ func (s *Service) SendTest(ctx context.Context, input contract.TestSendInput) er
 		gatewayCtx, cancel := detachOutboundRequestContext(ctx)
 		defer cancel()
 		if s.telegramSender != nil {
-			sendErr = s.telegramSender.SendMessage(gatewayCtx, target, format.ComposePlainTextMessage(title, body))
+			sendErr = s.sendTelegram(gatewayCtx, target, scene, title, body)
 		}
 		s.recordSendAttempt(notificationSendAttempt{
 			eventType: scene,
@@ -190,13 +190,12 @@ func (s *Service) dispatchSingleEvent(ctx context.Context, setting settingsmessa
 		}
 	}
 	if setting.Channels.Telegram.Enabled && len(setting.Channels.Telegram.Recipients) > 0 {
-		message := format.ComposePlainTextMessage(title, body)
 		for _, recipient := range setting.Channels.Telegram.Recipients {
 			var sendErr error
 			if s.telegramSender == nil {
 				sendErr = contract.ErrSendFailed
 			} else {
-				sendErr = s.telegramSender.SendMessage(ctx, recipient, message)
+				sendErr = s.sendTelegram(ctx, recipient, payload.EventType, title, body)
 			}
 			s.recordSendAttempt(notificationSendAttempt{
 				eventType: payload.EventType,
@@ -330,4 +329,16 @@ func notificationVariablesToJSON(data map[string]interface{}) jsonmap.JSON {
 		result[key] = value
 	}
 	return result
+}
+
+// quotedTelegramScenes 是正文使用 Telegram 引用块（竖线 + 淡底色）的通知场景；其余场景保持纯文本。
+var quotedTelegramScenes = map[string]bool{
+	constants.NotificationEventOrderPaidSuccess: true,
+}
+
+func (s *Service) sendTelegram(ctx context.Context, chatID, scene, title, body string) error {
+	if quotedTelegramScenes[strings.ToLower(strings.TrimSpace(scene))] {
+		return s.telegramSender.SendQuotedMessage(ctx, chatID, title, body)
+	}
+	return s.telegramSender.SendMessage(ctx, chatID, format.ComposePlainTextMessage(title, body))
 }

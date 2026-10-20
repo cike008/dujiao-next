@@ -53,6 +53,8 @@ type DashboardAlertReader interface {
 
 type TelegramSender interface {
 	SendMessage(ctx context.Context, chatID, message string) error
+	// SendQuotedMessage 发送「标题 + 引用块正文」格式的消息（Telegram 左侧竖线 + 淡底色的块）。
+	SendQuotedMessage(ctx context.Context, chatID, title, body string) error
 }
 
 type FeishuSender interface {

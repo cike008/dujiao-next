@@ -150,3 +150,31 @@ func (r *rejectingSender) SendWithBotToken(_ context.Context, _ string, options 
 	}
 	return nil
 }
+
+func TestSendQuotedMessagePutsOnlyTheBodyInsideAQuoteBlock(t *testing.T) {
+	settings := &settingReaderStub{setting: settingssecurity.TelegramAuthSetting{BotToken: "tok"}}
+	sender := &senderStub{}
+	svc := NewService(settings, config.TelegramAuthConfig{}, sender)
+	if err := svc.SendQuotedMessage(context.Background(), "1", "✅ 订单支付成功", "购买人：a@b.co\n金额：1 <2>"); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	want := "✅ 订单支付成功\n\n<blockquote>购买人：<code>a@b.co</code>\n金额：1 &lt;2&gt;</blockquote>"
+	if sender.options.ParseMode != "HTML" || sender.options.Message != want {
+		t.Fatalf("unexpected quoted message:\n got  %q\n want %q", sender.options.Message, want)
+	}
+
+	rejecting := &rejectingSender{}
+	svc = NewService(settings, config.TelegramAuthConfig{}, rejecting)
+	if err := svc.SendQuotedMessage(context.Background(), "1", "标题", "正文 a@b.co"); err != nil {
+		t.Fatalf("fallback failed: %v", err)
+	}
+	if len(rejecting.sent) != 2 || rejecting.sent[1].ParseMode != "" || rejecting.sent[1].Message != "标题\n\n正文 a@b.co" {
+		t.Fatalf("expected a plain-text retry without any markup, got %+v", rejecting.sent)
+	}
+
+	empty := &senderStub{}
+	svc = NewService(settings, config.TelegramAuthConfig{}, empty)
+	if err := svc.SendQuotedMessage(context.Background(), "1", "只有标题", "  "); err != nil || empty.options.Message != "只有标题" {
+		t.Fatalf("an empty body must send just the title, got %q err=%v", empty.options.Message, err)
+	}
+}

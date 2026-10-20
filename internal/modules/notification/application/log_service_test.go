@@ -311,3 +311,36 @@ func TestOptionalLinesDisappearCleanlyWhenTheyHaveNoValue(t *testing.T) {
 		t.Errorf("english metrics line: %q", en)
 	}
 }
+
+type telegramRoutingStub struct{ plain, quoted []string }
+
+func (s *telegramRoutingStub) SendMessage(_ context.Context, _ string, message string) error {
+	s.plain = append(s.plain, message)
+	return nil
+}
+
+func (s *telegramRoutingStub) SendQuotedMessage(_ context.Context, _ string, title, body string) error {
+	s.quoted = append(s.quoted, title+"|"+body)
+	return nil
+}
+
+func TestOnlyOrderPaidSuccessUsesTheTelegramQuoteBlock(t *testing.T) {
+	stub := &telegramRoutingStub{}
+	svc := &Service{telegramSender: stub}
+	for _, scene := range []string{
+		constants.NotificationEventOrderPaidSuccess,
+		constants.NotificationEventWalletRechargeSuccess,
+		constants.NotificationEventManualFulfillmentPending,
+		constants.NotificationEventExceptionAlert,
+	} {
+		if err := svc.sendTelegram(context.Background(), "1", scene, "T", "B"); err != nil {
+			t.Fatalf("%s: %v", scene, err)
+		}
+	}
+	if len(stub.quoted) != 1 || stub.quoted[0] != "T|B" {
+		t.Fatalf("only the paid-order notification may use the quote block, got %v", stub.quoted)
+	}
+	if len(stub.plain) != 3 || stub.plain[0] != "T\n\nB" {
+		t.Fatalf("every other scene must stay plain text, got %v", stub.plain)
+	}
+}
