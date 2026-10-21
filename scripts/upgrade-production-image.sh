@@ -10,6 +10,7 @@
 #   NEW_IMAGE         必填，已构建好的新镜像标签
 #   OLD_IMAGE         可选，默认取当前运行容器的镜像
 #   EXPECTED_VERSION  可选，默认由 NEW_IMAGE 标签推导（teamgenie-v1.5.0-security-REV -> v1.5.0-teamgenie-security-REV）
+#   EXPECTED_ENV_FILE 可选，升级成功后写入新镜像/版本的安全自检基线（默认 /home/deploy/ops/dujiao-security/expected.env）
 # 其余路径/容器名见下方默认值，可用同名环境变量覆盖。
 #
 # 数据库只做备份，从不覆盖；失败时只恢复 compose 文件和镜像。
@@ -125,6 +126,15 @@ docker inspect "$CONTAINER" --format '{{.Config.Image}}' | grep -Fqx "$NEW_IMAGE
 
 changed=0
 trap - EXIT
+
+# 安全自检（ops 目录里的 verify 脚本）按 expected.env 比对运行镜像；升级成功后同步更新，
+# 否则下次自检会因为"镜像和旧基线不一致"而每 6 小时误报失败。目录不存在时跳过。
+EXPECTED_ENV_FILE="${EXPECTED_ENV_FILE:-/home/deploy/ops/dujiao-security/expected.env}"
+if [[ -d "$(dirname "$EXPECTED_ENV_FILE")" ]]; then
+  printf 'EXPECTED_IMAGE=%s\nEXPECTED_VERSION=%s\n' "$NEW_IMAGE" "$EXPECTED_VERSION" >"$EXPECTED_ENV_FILE"
+  chmod 0644 "$EXPECTED_ENV_FILE"
+  echo "Security monitor baseline updated: $EXPECTED_ENV_FILE"
+fi
 
 echo "Upgrade completed."
 echo "backup_dir=$BACKUP_DIR"
