@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 每 6 小时（以及登录/唤醒后）把 Dujiao 备份拉取到这台 Mac。
+     安装: cp 本文件到 ~/Library/LaunchAgents/ 后 launchctl load ~/Library/LaunchAgents/com.aimosh.dujiao-backup.plist
+     使用前把下面的 /Users/cike 改成你的用户目录。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.aimosh.dujiao-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/cike/dujiao-next/dujiao-next-v1.5.0-teamgenie/scripts/backup-dujiao-to-mac.sh</string>
+  </array>
+  <key>StartInterval</key><integer>21600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>StandardOutPath</key><string>/Users/cike/Backups/dujiao-next/backup.log</string>
+  <key>StandardErrorPath</key><string>/Users/cike/Backups/dujiao-next/backup.log</string>
+  <key>Nice</key><integer>10</integer>
+</dict>
+</plist>
