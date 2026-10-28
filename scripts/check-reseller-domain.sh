@@ -21,9 +21,25 @@ if [[ $# -lt 1 ]]; then
   echo "Usage: EXPECT_IP=<ip> $0 <domain> [domain...]" >&2
   exit 2
 fi
-for cmd in dig openssl curl python3; do
+for cmd in openssl curl python3; do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 2; }
 done
+
+# 查 DNS：有 dig 用 dig，没有就退回 Cloudflare DNS-over-HTTPS（只需要 curl + python3）。
+# 输出格式与 `dig +short` 一致：每行一条记录，TXT 带双引号。
+dns_short() { # 记录类型 名称
+  if command -v dig >/dev/null; then
+    dig @"$RESOLVER" +short "$1" "$2"
+    return
+  fi
+  curl -s -m 10 -H 'accept: application/dns-json' "https://cloudflare-dns.com/dns-query?name=$2&type=$1" |
+    python3 -c 'import json,sys
+try:
+    for a in json.load(sys.stdin).get("Answer", []):
+        print(a.get("data", ""))
+except Exception:
+    pass'
+}
 
 overall=0
 for domain in "$@"; do
@@ -39,7 +55,7 @@ for domain in "$@"; do
   fail() { echo "  FAIL  $1"; failed=1; }
 
   # DNS
-  ips="$(dig @"$RESOLVER" +short A "$domain" | grep -E '^[0-9.]+$' | tr '\n' ' ')"
+  ips="$(dns_short A "$domain" | grep -E '^[0-9.]+$' | tr '\n' ' ')"
   if [[ -z "$ips" ]]; then
     fail "no A record via $RESOLVER"
   elif [[ -n "$EXPECT_IP" && " $ips" != *" $EXPECT_IP "* ]]; then
@@ -47,7 +63,7 @@ for domain in "$@"; do
   else
     pass "A record: $ips"
   fi
-  txt="$(dig @"$RESOLVER" +short TXT "_moshshop-verify.$domain" | tr -d '"')"
+  txt="$(dns_short TXT "_moshshop-verify.$domain" | tr -d '"')"
   if [[ "$txt" == moshshop-verification=* ]]; then
     pass "ownership TXT present"
   else
