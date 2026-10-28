@@ -17,29 +17,42 @@ OUT_DIR="${OUT_DIR:-/home/deploy/backups/dujiao-config}"
 OWNER="${OWNER:-deploy:deploy}"
 KEEP="${KEEP:-14}"
 stamp="$(date -u +%Y%m%d%H%M%S)"
-out="$OUT_DIR/dujiao-config-$stamp.tar.gz"
+name="dujiao-config-$stamp.tar.gz"
 
 [[ $(id -u) == 0 ]] || { echo "Run as root." >&2; exit 1; }
 test -f "$APP_DIR/config/config.yml"
-mkdir -p "$OUT_DIR"
-chmod 0700 "$OUT_DIR"
-chown "$OWNER" "$OUT_DIR"
+[[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid KEEP" >&2; exit 1; }
+user="${OWNER%%:*}"
 
 files=("${APP_DIR#/}/config/config.yml" "${APP_DIR#/}/.env" "${APP_DIR#/}/docker-compose.yml")
 nginx_files=()
 for item in nginx/nginx.conf nginx/conf.d nginx/sites-available nginx/sites-enabled nginx/snippets; do
   [[ -e "/etc/$item" ]] && nginx_files+=("-C" "/etc" "$item")
 done
-tmp="$(mktemp "$OUT_DIR/.config-bundle.XXXXXX")"
-trap 'rm -f "$tmp"' EXIT
+work="$(mktemp -d /var/tmp/dujiao-config.XXXXXXXX)"
+trap 'rm -rf -- "$work"' EXIT
+tmp="$work/bundle.tar.gz"
 tar czf "$tmp" -C / "${files[@]}" "${nginx_files[@]}"
 test -s "$tmp"
 listing="$(tar tzf "$tmp")"
 grep -q "config/config.yml$" <<<"$listing"
-mv "$tmp" "$out"
-chown "$OWNER" "$out"
-chmod 0600 "$out"
-trap - EXIT
-
-ls -1t "$OUT_DIR"/dujiao-config-*.tar.gz | tail -n +"$((KEEP + 1))" | xargs -r rm -f --
-echo "config_bundle=ok file=$out"
+digest="$(sha256sum "$tmp" | awk '{print $1}')"
+# Only the unprivileged recipient opens paths in its writable directory.
+runuser -u "$user" -- bash -c '
+set -euo pipefail
+umask 077
+dir=$1 name=$2 digest=$3 keep=$4
+mkdir -p -- "$dir"
+chmod 0700 "$dir"
+cd -- "$dir"
+stage=$(mktemp -d .publish.XXXXXXXX)
+trap '\''rm -rf -- "$stage"'\'' EXIT
+cat >"$stage/$name"
+printf "%s  %s\n" "$digest" "$name" >"$stage/$name.sha256"
+(cd "$stage" && sha256sum -c "$name.sha256" >/dev/null)
+mv -T -- "$stage/$name" "$name"
+mv -T -- "$stage/$name.sha256" "$name.sha256"
+mapfile -t old < <(find . -maxdepth 1 -type f -name "dujiao-config-*.tar.gz" -printf "%f\n" | sort -r | tail -n +"$((keep + 1))")
+for file in "${old[@]}"; do rm -f -- "$file" "$file.sha256"; done
+' _ "$OUT_DIR" "$name" "$digest" "$KEEP" <"$tmp"
+echo "config_bundle=ok file=$OUT_DIR/$name"

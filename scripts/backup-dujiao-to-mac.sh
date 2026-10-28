@@ -16,9 +16,14 @@ REMOTE_UPLOADS="${REMOTE_UPLOADS:-/opt/dujiao-next/data/uploads}"
 KEEP_DB="${BACKUP_KEEP_DB:-30}"
 KEEP_CONFIG="${BACKUP_KEEP_CONFIG:-14}"
 MAX_DB_AGE_HOURS="${BACKUP_MAX_DB_AGE_HOURS:-30}"
+MAX_CONFIG_AGE_HOURS="${BACKUP_MAX_CONFIG_AGE_HOURS:-30}"
 PG_RESTORE="${PG_RESTORE:-$(command -v pg_restore || echo /opt/homebrew/opt/postgresql@16/bin/pg_restore)}"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+for number in "$KEEP_DB" "$KEEP_CONFIG" "$MAX_DB_AGE_HOURS" "$MAX_CONFIG_AGE_HOURS"; do
+  [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid backup retention or age setting" >&2; exit 1; }
+done
 
 mkdir -p "$DEST/db" "$DEST/config" "$DEST/uploads"
 chmod 700 "$DEST" "$DEST/db" "$DEST/config" "$DEST/uploads"
@@ -49,15 +54,23 @@ else
   restore_check="skipped"
 fi
 db_age_hours=$(( ( $(date +%s) - $(stat -f %m "$latest_db") ) / 3600 ))
-(( db_age_hours <= MAX_DB_AGE_HOURS )) || fail "最新数据库备份已是 ${db_age_hours} 小时前，服务器每日备份可能停了"
+(( db_age_hours >= 0 && db_age_hours <= MAX_DB_AGE_HOURS )) || fail "最新数据库备份已过期或时间异常"
 
 # 2) 配置包（服务器 root 定时生成；缺失视为失败，因为没有 config.yml 就恢复不出可用站点）
-rsync_pull --include='dujiao-config-*.tar.gz' --exclude='*' "$REMOTE:$REMOTE_CONFIG_DIR/" "$DEST/config/" \
+rsync_pull --include='dujiao-config-*.tar.gz' --include='dujiao-config-*.tar.gz.sha256' --exclude='*' "$REMOTE:$REMOTE_CONFIG_DIR/" "$DEST/config/" \
   || fail "拉取配置包失败（服务器是否已安装 dujiao-config-bundle？）"
 chmod 600 "$DEST"/config/dujiao-config-*.tar.gz 2>/dev/null || true
 latest_config="$(ls -1t "$DEST"/config/dujiao-config-*.tar.gz 2>/dev/null | head -1 || true)"
 [[ -n "$latest_config" ]] || fail "没有配置包"
-tar tzf "$latest_config" | grep -q 'config/config.yml$' || fail "配置包里没有 config.yml"
+expected_config_sum="$(awk '{print $1}' "$latest_config.sha256" 2>/dev/null || true)"
+actual_config_sum="$(shasum -a 256 "$latest_config" | awk '{print $1}')"
+[[ -n "$expected_config_sum" && "$expected_config_sum" == "$actual_config_sum" ]] || fail "配置包校验和不一致或缺失"
+config_age_hours=$(( ( $(date +%s) - $(stat -f %m "$latest_config") ) / 3600 ))
+(( config_age_hours >= 0 && config_age_hours <= MAX_CONFIG_AGE_HOURS )) || fail "配置包已过期或时间异常，服务器配置备份可能停了"
+config_listing="$(tar tzf "$latest_config")" || fail "配置包损坏"
+for required in config/config.yml .env docker-compose.yml; do
+  grep -Fqx "${REMOTE_APP_DIR:-opt/dujiao-next}/$required" <<<"$config_listing" || fail "配置包缺少必要文件"
+done
 
 # 3) 上传文件（不加 --delete）
 rsync_pull "$REMOTE:$REMOTE_UPLOADS/" "$DEST/uploads/" || fail "拉取上传文件失败"
@@ -65,8 +78,8 @@ uploads_count="$(find "$DEST/uploads" -type f | wc -l | tr -d ' ')"
 
 # 4) 保留策略
 ls -1t "$DEST"/db/postgres-*.dump | tail -n +"$((KEEP_DB + 1))" | while read -r f; do rm -f -- "$f" "$f.sha256"; done
-ls -1t "$DEST"/config/dujiao-config-*.tar.gz | tail -n +"$((KEEP_CONFIG + 1))" | xargs -I{} rm -f -- {} 2>/dev/null || true
+ls -1t "$DEST"/config/dujiao-config-*.tar.gz | tail -n +"$((KEEP_CONFIG + 1))" | while read -r f; do rm -f -- "$f" "$f.sha256"; done
 
 printf '{"ok":true,"at":"%s","latest_db":"%s","db_age_hours":%s,"pg_restore_list":"%s","latest_config":"%s","uploads_files":%s}\n' \
   "$stamp" "$(basename "$latest_db")" "$db_age_hours" "$restore_check" "$(basename "$latest_config")" "$uploads_count" >"$DEST/status.json"
-echo "备份完成：$(basename "$latest_db")（${db_age_hours} 小时前，pg_restore 检查 $restore_check）；配置包 $(basename "$latest_config")；上传文件 $uploads_count 个"
+echo "备份完成：$(basename "$latest_db")（${db_age_hours} 小时前，pg_restore 检查 ${restore_check}）；配置包 $(basename "$latest_config")；上传文件 $uploads_count 个"
