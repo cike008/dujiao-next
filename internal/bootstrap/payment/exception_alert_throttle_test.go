@@ -15,7 +15,7 @@ func newTestThrottle(window time.Duration) (*exceptionAlertThrottle, *time.Time)
 }
 
 func scanAlert(alertType, provider string) jsonmap.JSON {
-	return jsonmap.JSON{"alert_type": alertType, "provider": provider, "message": "payment channel not found"}
+	return jsonmap.JSON{"alert_type": alertType, "provider": provider, "message": "payment channel not found", "scan_rejected": true}
 }
 
 func TestScanFloodCollapsesIntoOneAlertPerWindow(t *testing.T) {
@@ -29,6 +29,29 @@ func TestScanFloodCollapsesIntoOneAlertPerWindow(t *testing.T) {
 	}
 	if sent != 1 {
 		t.Fatalf("a flood of identical scan alerts must produce one notification, got %d", sent)
+	}
+}
+
+func TestScanCannotSuppressBusinessFailure(t *testing.T) {
+	throttle, _ := newTestThrottle(10 * time.Minute)
+	scan := scanAlert("stripe_webhook_handle_failed", "stripe")
+	throttle.allow(scan)
+	for i := 0; i < 3; i++ {
+		failure := jsonmap.JSON{"alert_type": "stripe_webhook_handle_failed", "provider": "stripe", "message": "database unavailable"}
+		if ok, _ := throttle.allow(failure); !ok {
+			t.Fatal("an unclassified business failure must always be sent")
+		}
+	}
+}
+
+func TestScanChannelsAreIndependent(t *testing.T) {
+	throttle, _ := newTestThrottle(10 * time.Minute)
+	for _, id := range []uint{1, 2} {
+		data := scanAlert("stripe_webhook_handle_failed", "stripe")
+		data["channel_id"] = id
+		if ok, _ := throttle.allow(data); !ok {
+			t.Fatal("different channels must not suppress one another")
+		}
 	}
 }
 
@@ -71,8 +94,8 @@ func TestRealFailuresForDifferentPaymentsAreNeverMerged(t *testing.T) {
 	if ok, _ := throttle.allow(second); !ok {
 		t.Fatal("a real failure for a different payment must not be hidden by another one")
 	}
-	if ok, _ := throttle.allow(first); ok {
-		t.Fatal("the same payment failing again inside the window is a duplicate")
+	if ok, _ := throttle.allow(first); !ok {
+		t.Fatal("business failures must not be suppressed")
 	}
 }
 

@@ -91,9 +91,10 @@ func (h *Handler) PaymentCallback(c *gin.Context) {
 		"content_type", strings.TrimSpace(c.GetHeader("Content-Type")),
 	)
 	h.enqueuePaymentExceptionAlert(c, jsonmap.JSON{
-		"alert_type":  "callback_unrecognized",
-		"alert_level": "warning",
-		"message":     "支付回调请求无法匹配已支持的回调格式",
+		"alert_type":    "callback_unrecognized",
+		"scan_rejected": true,
+		"alert_level":   "warning",
+		"message":       "支付回调请求无法匹配已支持的回调格式",
 	})
 	c.AbortWithStatus(http.StatusNotFound)
 }

@@ -221,7 +221,7 @@ func (a exceptionAlerterAdapter) EnqueuePaymentExceptionAlert(method, path, clie
 }
 
 const (
-	// exceptionAlertWindow 同一类告警在该窗口内只发送一次，其余计入 suppressed_count。
+	// exceptionAlertWindow 同一类入口拒绝告警在该窗口内只发送一次。
 	exceptionAlertWindow = 10 * time.Minute
 	// exceptionAlertMaxKeys 限制内存占用；超过后先清理已过期条目。
 	exceptionAlertMaxKeys = 1024
@@ -229,8 +229,7 @@ const (
 
 // exceptionAlertThrottle 聚合重复的支付异常告警，避免扫描器刷屏淹没真实告警。
 //
-// 聚合键 = 告警类型 + 渠道 + 具体的支付/订单标识。没有具体标识的告警（例如伪造回调的盲扫）
-// 会合并成一条；针对某一笔支付的真实失败各自独立，不会被别的告警吞掉。
+// 仅聚合入口明确标记的探测拒绝；业务故障和性质不明的错误始终放行。
 type exceptionAlertThrottle struct {
 	mu      sync.Mutex
 	window  time.Duration
@@ -258,6 +257,7 @@ func exceptionAlertKey(data jsonmap.JSON) string {
 	return strings.Join([]string{
 		throttleField(data, "alert_type"),
 		throttleField(data, "provider"),
+		throttleField(data, "channel_id"),
 		throttleField(data, "payment_id"),
 		throttleField(data, "out_trade_no"),
 		throttleField(data, "order_no"),
@@ -266,6 +266,9 @@ func exceptionAlertKey(data jsonmap.JSON) string {
 
 // allow 返回是否应该发送这条告警；发送时返回此前被压制的数量（可写入告警内容）。
 func (t *exceptionAlertThrottle) allow(data jsonmap.JSON) (send bool, suppressed int) {
+	if rejected, _ := data["scan_rejected"].(bool); !rejected {
+		return true, 0
+	}
 	if t == nil || t.window <= 0 {
 		return true, 0
 	}

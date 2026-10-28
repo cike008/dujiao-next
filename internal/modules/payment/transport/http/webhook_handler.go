@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"html/template"
 	"io"
 	"net/http"
@@ -111,10 +112,12 @@ func (h *WebhookHandler) PaypalWebhook(c *gin.Context) {
 			"error", err,
 		)
 		h.enqueuePaymentExceptionAlert(c, jsonmap.JSON{
-			"alert_type":  "paypal_webhook_handle_failed",
-			"alert_level": "error",
-			"message":     strings.TrimSpace(err.Error()),
-			"provider":    constants.PaymentChannelTypePaypal,
+			"alert_type":    "paypal_webhook_handle_failed",
+			"channel_id":    query.ChannelID,
+			"scan_rejected": errors.Is(err, ErrPaymentChannelNotFound),
+			"alert_level":   "error",
+			"message":       strings.TrimSpace(err.Error()),
+			"provider":      constants.PaymentChannelTypePaypal,
 		})
 		respondPaymentCallbackError(c, err)
 		return
@@ -153,10 +156,12 @@ func (h *WebhookHandler) StripeWebhook(c *gin.Context) {
 			"error", err,
 		)
 		h.enqueuePaymentExceptionAlert(c, jsonmap.JSON{
-			"alert_type":  "stripe_webhook_handle_failed",
-			"alert_level": "error",
-			"message":     strings.TrimSpace(err.Error()),
-			"provider":    constants.PaymentChannelTypeStripe,
+			"alert_type":    "stripe_webhook_handle_failed",
+			"channel_id":    query.ChannelID,
+			"scan_rejected": errors.Is(err, ErrPaymentChannelNotFound),
+			"alert_level":   "error",
+			"message":       strings.TrimSpace(err.Error()),
+			"provider":      constants.PaymentChannelTypeStripe,
 		})
 		respondPaymentCallbackError(c, err)
 		return
@@ -197,10 +202,12 @@ func (h *WebhookHandler) DujiaoPayWebhook(c *gin.Context) {
 			"error", err,
 		)
 		h.enqueuePaymentExceptionAlert(c, jsonmap.JSON{
-			"alert_type":  "dujiaopay_webhook_handle_failed",
-			"alert_level": "error",
-			"message":     strings.TrimSpace(err.Error()),
-			"provider":    constants.PaymentProviderDujiaoPay,
+			"alert_type":    "dujiaopay_webhook_handle_failed",
+			"channel_id":    query.ChannelID,
+			"scan_rejected": errors.Is(err, ErrPaymentChannelNotFound),
+			"alert_level":   "error",
+			"message":       strings.TrimSpace(err.Error()),
+			"provider":      constants.PaymentProviderDujiaoPay,
 		})
 		respondPaymentCallbackError(c, err)
 		return
