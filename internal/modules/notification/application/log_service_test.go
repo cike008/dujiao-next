@@ -293,6 +293,39 @@ func TestTemplateVariablesIncludeAlertIconAndReadableChannelName(t *testing.T) {
 	}
 }
 
+func TestManualConfirmedPaymentIsMarkedInChannelName(t *testing.T) {
+	cases := []struct{ locale, want string }{
+		{"zh-CN", "Stripe（人工确认）"}, {"zh-TW", "Stripe（人工確認）"}, {"en-US", "Stripe (manual confirm)"},
+	}
+	for _, c := range cases {
+		vars := derivedVariables("order_paid_success", c.locale, map[string]interface{}{
+			"provider_type": "official", "channel_type": "stripe", "manual_confirm": "true",
+		})
+		if vars["payment_channel_name"] != c.want {
+			t.Errorf("%s: payment_channel_name = %q, want %q", c.locale, vars["payment_channel_name"], c.want)
+		}
+		if vars["manual_confirm_label"] == "" {
+			t.Errorf("%s: manual_confirm_label must be set for a manually confirmed payment", c.locale)
+		}
+	}
+	// 线上模板只引用 payment_channel_name，所以标记必须出现在渲染结果里
+	vars := derivedVariables("order_paid_success", "zh-CN", map[string]interface{}{
+		"provider_type": "official", "channel_type": "stripe", "manual_confirm": "true",
+	})
+	if got := format.RenderTemplate("💳 渠道：{{payment_channel_name}}", vars); got != "💳 渠道：Stripe（人工确认）" {
+		t.Errorf("rendered line = %q", got)
+	}
+	for _, data := range []map[string]interface{}{
+		{"provider_type": "official", "channel_type": "stripe"},
+		{"provider_type": "official", "channel_type": "stripe", "manual_confirm": "false"},
+	} {
+		plain := derivedVariables("order_paid_success", "zh-CN", data)
+		if plain["payment_channel_name"] != "Stripe" || plain["manual_confirm_label"] != "" {
+			t.Errorf("a normal payment must stay unmarked, got name %q label %q", plain["payment_channel_name"], plain["manual_confirm_label"])
+		}
+	}
+}
+
 func TestOptionalLinesDisappearCleanlyWhenTheyHaveNoValue(t *testing.T) {
 	const tmpl = "{{alert_level_icon}} 级别：{{alert_level}}\n🕒 时间：{{occurred_at}}{{client_ip_suffix}}\n{{alert_metrics}}\n{{affected_items_summary}}"
 	render := func(data map[string]interface{}) string {

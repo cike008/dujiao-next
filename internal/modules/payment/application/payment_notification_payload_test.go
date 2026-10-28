@@ -199,6 +199,35 @@ func TestBuildOrderNotificationPayloadKeepsBepusdtCashierChannel(t *testing.T) {
 	}
 }
 
+func TestBuildOrderNotificationPayloadMarksManualConfirm(t *testing.T) {
+	svc := &PaymentService{}
+	order := &orderdomain.Order{
+		ID:          1004,
+		OrderNo:     "DJ202603230004",
+		Currency:    "usd",
+		Status:      constants.OrderStatusPaid,
+		TotalAmount: money.FromDecimal(decimal.NewFromInt(10)),
+	}
+	manual := &paymentdomain.Payment{
+		ID:           12,
+		ProviderType: constants.PaymentProviderBepusdt,
+		ChannelType:  constants.PaymentProviderBepusdt,
+		ProviderPayload: jsonmap.JSON{
+			"manual_confirm": jsonmap.JSON{"admin_id": 7, "remark": "stripe dashboard verified"},
+		},
+	}
+	if got := svc.buildOrderNotificationPayload(order, manual)["manual_confirm"]; got != "true" {
+		t.Fatalf("manually confirmed payment: manual_confirm = %v, want true", got)
+	}
+	normal := &paymentdomain.Payment{ID: 13, ProviderType: constants.PaymentProviderBepusdt, ChannelType: constants.PaymentProviderBepusdt}
+	if _, ok := svc.buildOrderNotificationPayload(order, normal)["manual_confirm"]; ok {
+		t.Fatal("a normal payment must not carry manual_confirm")
+	}
+	if _, ok := svc.buildOrderNotificationPayload(order, nil)["manual_confirm"]; ok {
+		t.Fatal("an order without a payment record must not carry manual_confirm")
+	}
+}
+
 func TestMergeProviderPayloadPreservesDisplayChannelType(t *testing.T) {
 	existing := jsonmap.JSON{
 		"display_channel_type": "usdt.arbitrum",

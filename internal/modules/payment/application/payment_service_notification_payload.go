@@ -49,6 +49,10 @@ func (s *PaymentService) buildOrderNotificationPayload(order *orderdomain.Order,
 	}
 	if payment != nil {
 		payload["payment_id"] = fmt.Sprintf("%d", payment.ID)
+		// 后台"人工确认支付"会把 manual_confirm 写进支付记录的回调数据，通知里据此标注。
+		if _, manual := payment.ProviderPayload["manual_confirm"]; manual {
+			payload["manual_confirm"] = "true"
+		}
 	}
 	if providerType != "" {
 		payload["provider_type"] = providerType

@@ -28,7 +28,9 @@ func BuildTemplateVariables(payload queue.NotificationDispatchPayload) map[strin
 // AddDerivedVariables 补充供模板直接使用的派生变量（真实通知与测试通知共用）：
 //   - alert_level_icon：按告警级别给出 ❌ / ⚠️ / ℹ️
 //   - alert_level_bar：按告警级别给出彩色方块色条（错误 🟥🟥🟥 / 警告 🟧🟧🟧 / 提示 🟪🟪🟪），适合放在标题里
-//   - payment_channel_name：可读的支付渠道名（Stripe、PayPal、易支付 · 支付宝 …）
+//   - payment_channel_name：可读的支付渠道名（Stripe、PayPal、易支付 · 支付宝 …）；订单经后台人工确认支付时，
+//     名称后追加「（人工确认）」，已引用该变量的模板无需修改即可看到标记
+//   - manual_confirm_label：人工确认时为「（人工确认）」，否则为空，供自定义模板单独引用
 //   - client_ip_suffix：有来源 IP 时为「｜🌐 IP」，否则为空，可直接接在时间等行末尾
 //   - alert_metrics：有当前值时为一整行「📊 当前值…阈值…」，否则为空，适合放在模板靠后的位置
 //
@@ -45,6 +47,12 @@ func AddDerivedVariables(data map[string]interface{}, locale string) {
 		strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["provider_type"]))),
 		strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["channel_type"]))),
 	)
+	data["manual_confirm_label"] = ""
+	if strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["manual_confirm"]))) == "true" {
+		label := localizedNotificationText(locale, "（人工确认）", "（人工確認）", " (manual confirm)")
+		data["manual_confirm_label"] = label
+		data["payment_channel_name"] = fmt.Sprint(data["payment_channel_name"]) + label
+	}
 	if ip := strings.TrimSpace(fmt.Sprint(valueOrEmpty(data["client_ip"]))); ip != "" {
 		data["client_ip_suffix"] = "｜🌐 " + ip
 	} else {
