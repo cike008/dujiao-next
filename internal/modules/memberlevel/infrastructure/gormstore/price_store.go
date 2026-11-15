@@ -8,6 +8,7 @@ import (
 	memberleveldomain "github.com/dujiao-next/internal/modules/memberlevel/domain"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type PriceStore struct {
@@ -66,23 +67,20 @@ func (r *PriceStore) BatchUpsert(prices []memberleveldomain.MemberLevelPrice) er
 	if len(prices) == 0 {
 		return nil
 	}
-	for _, p := range prices {
-		existing, err := r.GetByLevelAndProductAndSKU(p.MemberLevelID, p.ProductID, p.SKUID)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			existing.PriceAmount = p.PriceAmount
-			if err := r.db.Save(existing).Error; err != nil {
-				return err
-			}
-		} else {
-			if err := r.db.Create(&p).Error; err != nil {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, p := range prices {
+			p.ID = 0
+			p.DeletedAt = nil
+			// The unique key also covers soft-deleted rows; revive only the explicitly saved price.
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "member_level_id"}, {Name: "product_id"}, {Name: "sku_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"price_amount", "deleted_at", "updated_at"}),
+			}).Create(&p).Error; err != nil {
 				return err
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (r *PriceStore) Delete(id uint) error {
