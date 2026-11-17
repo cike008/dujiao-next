@@ -172,6 +172,8 @@ export interface AdminWalletRechargeUser {
 export interface AdminWalletRecharge {
   id: number
   recharge_no: string
+  client_ip?: string
+  refunded_amount?: string
   user_id: number
   payment_id: number
   channel_id: number
@@ -376,6 +378,8 @@ export const adminAPI = {
   batchUpdateProductCategory: (ids: number[], categoryId: number) => api.post('/admin/products/batch-category', { ids, category_id: categoryId }),
   batchUpdateProductStockDisplay: (ids: number[], stockDisplayMode: string) =>
     api.post('/admin/products/batch-stock-display', { ids, stock_display_mode: stockDisplayMode }),
+  batchUpdateProductPurchaseType: (ids: number[], purchaseType: string) =>
+    api.post('/admin/products/batch-purchase-type', { ids, purchase_type: purchaseType }),
   batchDeleteProducts: (ids: number[]) => api.post('/admin/products/batch-delete', { ids }),
   getCategories: (params?: Record<string, unknown>) => api.get('/admin/categories', { params }),
   createCategory: (data: Partial<AdminCategory>) => api.post('/admin/categories', data),
@@ -452,6 +456,10 @@ export const adminAPI = {
   getUserWallet: (id: number) => api.get(`/admin/users/${id}/wallet`),
   getUserWalletTransactions: (id: number, params?: Record<string, unknown>) =>
     api.get(`/admin/users/${id}/wallet/transactions`, { params }),
+  getWalletRecharge: (id: number) => api.get(`/admin/wallet/recharges/${id}`),
+  manualConfirmRecharge: (id: number, payload: { payment_id: number; provider_ref?: string; remark?: string }) => api.post(`/admin/wallet/recharges/${id}/manual-confirm-payment`, payload),
+  manualRefundRecharge: (id: number, payload: { amount: string; remark?: string; request_id: string; payment_fee_refunded: boolean }) => api.post(`/admin/wallet/recharges/${id}/manual-refund`, payload),
+
   getWalletRecharges: (params?: Record<string, unknown>) =>
     api.get('/admin/wallet/recharges', { params }),
   adjustUserWallet: (id: number, data: AdminAdjustWalletPayload) =>
@@ -578,6 +586,10 @@ export const adminAPI = {
   getMemberLevelPrices: (productId: number) => api.get('/admin/member-level-prices', { params: { product_id: productId } }),
   batchUpsertMemberLevelPrices: (data: { prices: Partial<AdminMemberLevelPrice>[] }) => api.post('/admin/member-level-prices/batch', data),
   deleteMemberLevelPrice: (id: number) => api.delete(`/admin/member-level-prices/${id}`),
+  getUserProductPrices: (params: { user_id: number; page?: number; page_size?: number }) => api.get('/admin/member-user-prices', { params }),
+  batchUpsertUserProductPrices: (data: { prices: { user_id: number; product_id: number; sku_id: number; price_amount: number }[] }) =>
+    api.post('/admin/member-user-prices/batch', data),
+  deleteUserProductPrice: (id: number) => api.delete(`/admin/member-user-prices/${id}`),
   setUserMemberLevel: (userId: number, memberLevelId: number) => api.put(`/admin/users/${userId}/member-level`, { member_level_id: memberLevelId }),
   backfillMemberLevels: () => api.post('/admin/member-levels/backfill'),
   createCardSecretBatch: (data: { product_id: number; sku_id?: number; name?: string; secrets: string[]; batch_no?: string; note?: string; deduplicate?: boolean }) => api.post('/admin/card-secrets/batch', data),

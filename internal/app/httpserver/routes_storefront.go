@@ -42,6 +42,7 @@ func registerStorefrontRoutes(
 	userAuditLogHandler *auditlogtransport.UserHandler,
 	userGiftCardHandler *giftcardtransport.UserHandler,
 	publicMemberLevelHandler *memberleveltransport.PublicHandler,
+	userMemberLevelHandler *memberleveltransport.UserHandler,
 	userProfileHandler *userauthtransport.UserProfileHandler,
 	userEmailHandler *userauthtransport.UserEmailHandler,
 	userPasswordHandler *userauthtransport.UserPasswordHandler,
@@ -155,6 +156,7 @@ func registerStorefrontRoutes(
 		paymenttransport.RegisterUserWriteRoutes(user, paymentWriteHandler)
 		paymenttransport.RegisterUserLatestRoute(user, paymentLatestHandler)
 		wallettransport.RegisterUserRoutes(user, userWalletHandler)
+		memberleveltransport.RegisterUserRoutes(user, userMemberLevelHandler)
 		giftCardRedeem := user.Group("", middleware.RateLimitMiddleware(redisClient, giftCardRedeemRule, middleware.KeyByUserIDAndIP))
 		giftcardtransport.RegisterUserRoutes(giftCardRedeem, userGiftCardHandler)
 		affiliatetransport.RegisterUserRoutes(user, affiliateHandler)

@@ -45,9 +45,10 @@ func (s *Service) ResolveSupplyPrices(userID uint, productIDs []uint) (resellerc
 
 // Service 会员等级服务
 type Service struct {
-	levelRepo memberlevelcontract.LevelRepository
-	priceRepo memberlevelcontract.PriceRepository
-	userRepo  memberlevelcontract.UserRepository
+	levelRepo     memberlevelcontract.LevelRepository
+	priceRepo     memberlevelcontract.PriceRepository
+	userRepo      memberlevelcontract.UserRepository
+	userPriceRepo memberlevelcontract.UserPriceRepository
 }
 
 // NewService 创建会员等级服务
@@ -55,11 +56,13 @@ func NewService(
 	levelRepo memberlevelcontract.LevelRepository,
 	priceRepo memberlevelcontract.PriceRepository,
 	userRepo memberlevelcontract.UserRepository,
+	userPriceRepo memberlevelcontract.UserPriceRepository,
 ) *Service {
 	return &Service{
-		levelRepo: levelRepo,
-		priceRepo: priceRepo,
-		userRepo:  userRepo,
+		levelRepo:     levelRepo,
+		priceRepo:     priceRepo,
+		userRepo:      userRepo,
+		userPriceRepo: userPriceRepo,
 	}
 }
 
@@ -207,6 +210,32 @@ func (s *Service) ResolveMemberPrice(levelID, productID, skuID uint, basePrice d
 	return basePrice, decimal.Zero
 }
 
+// ResolveCatalogPrice 解析目录展示价，口径与下单完全一致。
+//
+// 下单流程里活动价 → 批发价 → 会员等级价依次生效，最后才拿专属价去比较；专属价必须
+// 比这条路径的最终价更低才有意义。目录只有基础价可用（没有数量、也拿不到批发阶梯的
+// 命中情况），所以这里比的是"基础价 vs 专属价 vs 会员价"，取更低的那个：
+//   - 专属价低于会员价 → 展示专属价，调用方隐藏活动价（一口价不与活动叠加）；
+//   - 会员价更低 → 展示会员价；
+//   - 都不低于基础价 → 不命中。
+//
+// 上游对接目录和渠道目录都调这一份，避免两边各写一遍后慢慢跑偏。
+func (s *Service) ResolveCatalogPrice(
+	book UserPriceBook, levelID, productID, skuID uint,
+	base decimal.Decimal,
+) (price decimal.Decimal, hit bool, exclusive bool) {
+	best := base
+	if levelID > 0 {
+		if memberPrice, _ := s.ResolveMemberPrice(levelID, productID, skuID, base); memberPrice.LessThan(best) {
+			best, hit = memberPrice, true
+		}
+	}
+	if userPrice, ok := book.Resolve(productID, skuID, base); ok && userPrice.LessThan(best) {
+		best, hit, exclusive = userPrice, true, true
+	}
+	return best, hit, exclusive
+}
+
 // ResolveMemberPriceForProducts 批量解析会员价（用于商品列表）
 func (s *Service) ResolveMemberPriceForProducts(levelID uint, productIDs []uint) (map[uint][]memberleveldomain.MemberLevelPrice, error) {
 	if levelID == 0 || len(productIDs) == 0 {
@@ -260,6 +289,88 @@ func (s *Service) CheckAndUpgrade(userID uint) error {
 		}
 	}
 	return nil
+}
+
+// CheckAndDowngrade 仅在退款前达标的等级因本次退款失去资格时回退。
+// qualifiedLevel 必须来自同一事务内扣减前的 qualifiedRefundLevel，前后使用相同门槛。
+func (s *Service) CheckAndDowngrade(userID uint, qualifiedLevel *memberleveldomain.MemberLevel) error {
+	if qualifiedLevel == nil {
+		return nil
+	}
+	const maxDowngradeAttempts = 3
+	for attempt := 0; attempt < maxDowngradeAttempts; attempt++ {
+		user, err := s.userRepo.GetByID(userID)
+		if err != nil {
+			return err
+		}
+		if user == nil {
+			return memberlevelcontract.ErrUserNotFound
+		}
+		if user.MemberLevelID != qualifiedLevel.ID {
+			return memberlevelcontract.ErrLevelUpdateConflict
+		}
+		if s.meetsThreshold(user, qualifiedLevel) {
+			return nil
+		}
+		levels, err := s.levelRepo.ListAllActive()
+		if err != nil {
+			return err
+		}
+		var targetID uint
+		for i := range levels {
+			level := &levels[i]
+			if level.SortOrder >= qualifiedLevel.SortOrder {
+				continue
+			}
+			if s.meetsThreshold(user, level) {
+				targetID = level.ID
+				break
+			}
+		}
+		if targetID == 0 {
+			fallback, err := s.levelRepo.GetDefault()
+			if err != nil {
+				return err
+			}
+			if fallback != nil {
+				targetID = fallback.ID
+			}
+		}
+		if targetID == user.MemberLevelID {
+			return nil
+		}
+		affected, err := s.userRepo.UpdateMemberLevelIfCurrent(user.ID, qualifiedLevel.ID, targetID)
+		if err != nil {
+			return err
+		}
+		if affected > 0 {
+			return nil
+		}
+	}
+	return memberlevelcontract.ErrLevelUpdateConflict
+}
+
+// qualifiedRefundLevel 在退款事务内锁定用户，仅返回退款前已满足门槛的启用等级快照。
+// 未达标、零门槛、无等级及已删除或禁用的等级均不由退款触发降级。
+func (s *Service) qualifiedRefundLevel(userID uint) (*memberleveldomain.MemberLevel, error) {
+	user, err := s.userRepo.GetByIDForUpdate(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, memberlevelcontract.ErrUserNotFound
+	}
+	if user.MemberLevelID == 0 {
+		return nil, nil
+	}
+	level, err := s.levelRepo.GetByID(user.MemberLevelID)
+	if err != nil {
+		return nil, err
+	}
+	if level == nil || !level.IsActive || !s.meetsThreshold(user, level) {
+		return nil, nil
+	}
+	return level, nil
 }
 
 func (s *Service) findUpgradeTarget(user *userdomain.User, levels []memberleveldomain.MemberLevel) (*memberleveldomain.MemberLevel, error) {
@@ -328,6 +439,22 @@ func (s *Service) OnRechargeCompleted(userID uint, amount decimal.Decimal) error
 	return s.CheckAndUpgrade(userID)
 }
 
+// OnRechargeRefunded 扣回本次退款对应的累计充值，仅对本次退款导致失去资格的等级执行回退。
+// 调用方须将仓储绑定到退款事务，保证扣款、退款记录与累计充值同步提交。
+func (s *Service) OnRechargeRefunded(userID uint, amount decimal.Decimal) error {
+	if userID == 0 || !amount.Round(2).IsPositive() {
+		return nil
+	}
+	level, err := s.qualifiedRefundLevel(userID)
+	if err != nil {
+		return err
+	}
+	if err := s.userRepo.DecrementTotalRecharged(userID, amount); err != nil {
+		return err
+	}
+	return s.CheckAndDowngrade(userID, level)
+}
+
 // OnOrderPaid 订单支付成功后触发
 func (s *Service) OnOrderPaid(userID uint, amount decimal.Decimal) error {
 	if userID == 0 {
@@ -337,6 +464,22 @@ func (s *Service) OnOrderPaid(userID uint, amount decimal.Decimal) error {
 		return err
 	}
 	return s.CheckAndUpgrade(userID)
+}
+
+// OnOrderRefunded 扣回本次订单退款对应的累计消费，仅对本次退款导致失去资格的等级执行回退。
+// 调用方须将仓储绑定到订单退款事务。
+func (s *Service) OnOrderRefunded(userID uint, amount decimal.Decimal) error {
+	if userID == 0 || !amount.Round(2).IsPositive() {
+		return nil
+	}
+	level, err := s.qualifiedRefundLevel(userID)
+	if err != nil {
+		return err
+	}
+	if err := s.userRepo.DecrementTotalSpent(userID, amount); err != nil {
+		return err
+	}
+	return s.CheckAndDowngrade(userID, level)
 }
 
 // AssignDefaultLevel 为新用户分配默认等级
